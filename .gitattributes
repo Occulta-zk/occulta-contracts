@@ -1,0 +1,16 @@
+# Normalize line endings to LF in the repo; check out as-is on all platforms
+* text=auto eol=lf
+
+# Rust source — always LF
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+*.mjs text eol=lf
+
+# Binaries — no conversion
+*.wasm binary
+*.png binary
+*.jpg binary

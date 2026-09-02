@@ -13,3 +13,4 @@ doctest = false
 [dependencies]
 soroban-sdk = { workspace = true }
 occulta-types = { workspace = true }
+occulta-poseidon = { workspace = true }

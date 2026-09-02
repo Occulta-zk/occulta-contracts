@@ -140,30 +140,48 @@ Its BN254 Poseidon parameters are stated to match circomlib directly. Its BLS12-
 parameters are **self-generated** (circomlib has no native BLS12-381 Poseidon params),
 matching the `poseidon-bls12381-circom` project instead of circomlib proper.
 
-**Decision needed before M2, flagged rather than decided silently:** `occulta-poseidon`
-should most likely depend on `soroban-poseidon` for the constant tables and possibly the
-sponge construction itself (citing it as the source, per the "do not vendor circomlib
-constants without citing source" rule — citing an SDF-reviewed crate is materially safer
-than a fresh hand-transcription), rather than re-deriving circomlib's round constants by
-hand. This still requires our own differential fixture tests — depending on the crate does
-not remove the "byte-identical to circomlib" verification requirement, it only removes the
-transcription-error risk. This is a scope/dependency decision, not a cryptographic one, but
-it changes `occulta-poseidon`'s Cargo.toml and is called out here for sign-off before M2
-starts.
+**Resolved in M2, decided rather than left silent:** `occulta-poseidon` does **not** depend
+on `soroban-poseidon` — it wasn't on crates.io at verification time (GitHub-only), and a
+better option existed: sourcing constants mechanically rather than depending on a crate with
+its own unverified provenance claims. See "How occulta-poseidon actually got its parameters"
+below.
+
+### How occulta-poseidon actually got its parameters (M2)
+
+Two independent, mechanically-verified sources, not one crate trusted wholesale:
+
+- **BN254**: real circomlib constants, extracted from the `circomlibjs` npm package (iden3's
+  own JS reference implementation of circomlib) — `scripts/poseidon-gen/gen.mjs` reads
+  `circomlibjs/src/poseidon_constants.json` directly and replicates
+  `circomlibjs/src/poseidon_reference.js`'s exact algorithm to compute fixture outputs.
+- **BLS12-381**: circomlib has no native BLS12-381 parameters (confirmed above), so
+  `occulta-poseidon` instead uses **soroban-env-host's own CAP-75 conformance test
+  vectors** (`soroban-env-host-26.1.4/src/test/poseidon/poseidon_instance_bls12.rs`, cited by
+  that file's own `mod.rs` as sourced from HorizenLabs/poseidon2 and hadeshash) —
+  `scripts/poseidon-gen/extract_bls.mjs` parses the literal hex constants out of that file's
+  text (never hand-retyped) and self-checks its own algorithm replica against that file's
+  hardcoded `[0,1,2]` known-answer test before anything downstream trusts it.
+
+**A genuine discrepancy was found and is worth recording**: circomlib's own BN254 Poseidon
+parameters for `t=3` (2 inputs) use `rounds_p=57`, while `soroban-env-host`'s own BN254 test
+parameters for the same `t=3` use `rounds_p=56` — a real, load-bearing difference (different
+round count means a different, incompatible permutation entirely), not a rounding artifact.
+This means: **a circuit written against circomlib's actual Poseidon will not verify against
+`poseidon_permutation` called with SDF's own `POSEIDON_BN_PARAMS`** — you need circomlib's
+own constants (which is what `occulta-poseidon` uses for BN254). Always confirm which
+"reference" a parameter set actually claims before trusting a name like "Poseidon params" —
+see `crates/occulta-poseidon/src/params_bn254.rs`'s header comment for the full citation
+chain, and `scripts/poseidon-gen/README.md` for how to reproduce this from scratch.
+
+Every fixture value in `fixtures/poseidon/` was computed independently of the Rust
+implementation it's tested against (JS reference algorithm, or extraction + a from-scratch JS
+re-implementation of the round function) and then asserted against the **actual**
+`soroban-env-host` (via `soroban-sdk`'s `testutils::Env`, not a mock) in
+`crates/occulta-poseidon/src/tests.rs` — 16 tests, all green as of this writing. Coverage is
+scoped to `t ∈ {2,3,4}` (1–3 inputs) on both curves; see that crate's module doc for how to
+widen it.
 
 ## Instruction budget
 
-Not yet independently measured in this repo (`docs/BUDGET.md` is a placeholder until M3+
-land real `verify()`/`hash2`/`insert` code against a local Soroban test environment). The
-spec's cited figure (~40M instructions for a Groth16 verification, ~40% of testnet's
-per-transaction budget) is attributed to an SDF blog post, not verified firsthand here —
-treat it as a planning estimate until `docs/BUDGET.md` has measured numbers.
-
-## Open items for the next session
-
-1. Confirm exact G1/G2/Fr encoding for BN254 against a real snarkjs-produced proof fixture
-   (the c1||c0 vs c0||c1 swap above is read from doc comments, not yet round-tripped through
-   an actual pairing check — do that before shipping `occulta-verifier`).
-2. Decide + record the `soroban-poseidon` dependency question above.
-3. `stellar` CLI and `circom` are not installed in this environment yet; needed for
-   `contract build` in CI and for `scripts/gen-fixtures.sh` respectively.
+`occulta-poseidon::hash2` (BN254, t=3) measured at **1,750,923 CPU instructions** via
+`soroban-sdk` testutils. See `docs/BUDGET.md` for full details and methodology.

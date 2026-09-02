@@ -1,4 +1,30 @@
+# Rust build output
 /target
 **/target
+
+# macOS metadata
 .DS_Store
+
+# Windows debug symbols
 *.pdb
+
+# Node (scripts/poseidon-gen)
+node_modules/
+**/node_modules/
+
+# Environment / secrets — never commit these
+.env
+.env.*
+*.key
+*.pem
+*.secret
+secrets.*
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Stellar CLI artifacts
+.soroban/

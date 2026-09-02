@@ -1,0 +1,36 @@
+{
+  "t2": [
+    {
+      "inputs": [
+        "1"
+      ],
+      "output": "0x1dc37ce34aeee058292bb73bff9acffce73a8a92f3d6d1daa8b77d9516b5c837"
+    }
+  ],
+  "t3": [
+    {
+      "inputs": [
+        "1",
+        "2"
+      ],
+      "output": "0x200e6982ac00df8fa65cef1fde9f21373fdbbfd98f2df1eb5fa04f3302ab0397"
+    },
+    {
+      "inputs": [
+        "0",
+        "0"
+      ],
+      "output": "0x60351d345576275c676667b0b05fe317ac89f7f5d827b4c94f137be8f65fb2e9"
+    }
+  ],
+  "t4": [
+    {
+      "inputs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "output": "0x3ee96c25cccd2d4ce9423040834a34e61fccbd98d1820ee60d31098867511dc3"
+    }
+  ]
+}

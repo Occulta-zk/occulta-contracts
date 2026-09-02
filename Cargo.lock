@@ -1195,6 +1195,7 @@ dependencies = [
 name = "occulta-merkle"
 version = "0.1.0"
 dependencies = [
+ "occulta-poseidon",
  "occulta-types",
  "soroban-sdk",
 ]

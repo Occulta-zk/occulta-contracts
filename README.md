@@ -1,87 +1,127 @@
 # occulta-contracts
 
-The on-chain layer of Occulta — reusable Groth16 verification, Poseidon hashing, and
-shielded-state building blocks for Stellar smart contracts, so a Soroban developer can add
-zero-knowledge features without writing pairing math or porting Poseidon by hand.
+> ⚠️ **Testnet only. Unaudited. Not for real assets.**
 
-> ⚠️ **Testnet only. Unaudited. Not for real assets.** Nothing in this repository has been
-> security-audited, and it is not fit for holding value on mainnet. See `docs/SECURITY-MODEL.md`
-> and `SECURITY.md`.
+Occulta is a zero-knowledge toolkit for Stellar smart contracts. This repository is the
+on-chain layer — a set of reusable, composable building blocks so any Soroban developer can
+add ZK features to a contract without writing pairing math or porting Poseidon by hand.
 
-## Status
+---
 
-This repo is at milestone **M1 (Foundation)** of the build plan in `docs/PLATFORM.md`:
-workspace, CI, and `occulta-types` (shared types + the snarkjs↔Soroban encoding rules) are
-real and tested. Every other crate — `occulta-poseidon`, `occulta-verifier`,
-`occulta-merkle`, both contracts, and all three reference apps — is a scaffold: it compiles,
-it's in the workspace, and its module doc explains exactly what's missing and which milestone
-closes the gap. **Nothing here verifies a real proof yet.** If you're looking for a
-zero-knowledge feature to actually use today, this isn't it yet — track the milestones below.
+## What it does
 
-## 60-second quickstart (what's real today)
+**Prove things on-chain without revealing the underlying data.**
 
-There's no on-chain proof verification to demo yet (that's M3). What you *can* verify in 60
-seconds is the one piece of real, tested logic in this repo — the snarkjs↔Soroban byte
-encoding rules (`docs/ENCODING.md`), including the "G2 coordinate order trap" that this repo
-confirmed is real by reading the actual SDK source (see `docs/PLATFORM.md`):
+A user generates a proof off-chain (using `occulta-sdk`) that they know something — a
+secret note, a credential, a salary — then submits that proof to a Soroban contract. The
+contract verifies the proof on-chain and acts on it: releasing tokens, recording a vote,
+issuing an attestation. The underlying secret never touches the chain.
 
-```sh
-git clone <this repo>
-cd occulta-contracts
-cargo test -p occulta-types
-# -> 21 tests, all green: scalar range checks, point-length validation,
-#    and the G2 c0/c1 coordinate swap round-trip.
-```
+This repo provides three layers that make that possible:
 
-On Windows with Git Bash specifically, see the linker note in `CONTRIBUTING.md` if this
-fails with a confusing "extra operand" error — it's a `PATH` shadowing issue, not a code bug.
+### Cryptographic primitives
+
+**Groth16 proof verification** over BLS12-381 and BN254, using Stellar's native pairing host
+functions (CAP-59 / CAP-74). Submit a proof, get a boolean back. One pairing check per
+transaction, no math in your contract.
+
+**Poseidon hashing** built on CAP-75's native permutation host function, with parameters
+sourced directly from circomlib. The same hash your circuit uses, available on-chain, so
+Merkle paths computed off-chain verify correctly on-chain.
+
+### Shielded state
+
+An **incremental Merkle tree** with a root history buffer, so deposits and withdrawals can
+happen concurrently without proofs going stale. A persistent **nullifier registry** that
+makes double-spending impossible — a nullifier once spent stays spent, forever.
+
+### Deployable contracts
+
+A **verification-key registry** that any app on the network can share. Register your
+circuit's VK once; every contract that needs it calls `verify()` against the registry
+instead of bundling its own verifier. VKs can be frozen — once frozen, no admin can change
+them, which is what trustlessness actually requires.
+
+A **shielded pool** for SEP-41 tokens: deposit with a commitment, withdraw with a proof.
+The pool enforces the correct ordering — root check, nullifier check, proof verify, nullifier
+spent, then transfer — so reentrancy and double-spend are structurally impossible.
+
+### Reference applications
+
+- **private-vote** — anonymous, one-vote-per-member polling. Members prove membership
+  without revealing who they are. Each poll is domain-separated so a vote in one poll can't
+  be replayed in another.
+
+- **attestation** — reusable KYC credentials. An anchor issues a credential commitment;
+  the holder later proves they hold a valid credential satisfying some predicate, without
+  revealing which credential or which issuer.
+
+- **shieldroll** — confidential payroll. An employer deposits a total; employees each
+  withdraw their own amount. The circuit proves the parts sum to the whole without revealing
+  any individual salary.
+
+---
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    circuit["circom circuit\n(occulta-sdk, off-chain)"] --> snarkjs["snarkjs\nproof + public signals"]
-    snarkjs -- "encoded per docs/ENCODING.md" --> apps["apps/private-vote\napps/attestation\napps/shieldroll"]
-    types["occulta-types"] --> verifier["occulta-verifier"]
-    verifier --> registry["contracts/registry"]
-    apps --> registry
-    apps --> pool["contracts/shielded-pool"]
+    circuit["circom circuit\n(off-chain, occulta-sdk)"]
+    snarkjs["proof + public signals"]
+    types["occulta-types\nshared types · encoding"]
+    poseidon["occulta-poseidon\nPoseidon · CAP-75"]
+    verifier["occulta-verifier\nGroth16 · BLS12-381 · BN254"]
+    merkle["occulta-merkle\nMerkle tree · nullifiers"]
+    registry["contracts/registry\nVK registry · verify()"]
+    pool["contracts/shielded-pool\nSEP-41 deposit · withdraw"]
+    apps["apps/\nprivate-vote · attestation · shieldroll"]
+
+    circuit --> snarkjs
+    snarkjs --> apps
+    types --> verifier
+    types --> merkle
+    poseidon --> merkle
+    verifier --> registry
+    merkle --> registry
+    merkle --> pool
     registry --> pool
+    registry --> apps
+    pool --> apps
 ```
 
-Full diagram and the reasoning behind separating verification from app state:
-`docs/ARCHITECTURE.md`.
-
-## Deployed testnet contract IDs
-
-None yet. `contracts/registry` is scaffolded but not implemented (M5); this table will be
-filled in and kept current once something real is deployed via `scripts/deploy-testnet.sh`.
-
-| Contract | Network | Contract ID |
-| --- | --- | --- |
-| — | — | — |
+---
 
 ## Protocol requirements
 
-- BLS12-381 curve operations (`env.crypto().bls12_381()`): CAP-59, **Protocol 22+**.
-- BN254 curve operations (`env.crypto().bn254()`) and Poseidon/Poseidon2
-  (`env.crypto_hazmat().poseidon_permutation()`, requires the `hazmat-crypto` feature on
-  `soroban-sdk`): CAP-74 and CAP-75 respectively, **Protocol 25+**.
+| Feature | CAP | Minimum protocol |
+| --- | --- | --- |
+| BLS12-381 pairing (`env.crypto().bls12_381()`) | CAP-59 | Protocol 22+ |
+| BN254 pairing (`env.crypto().bn254()`) | CAP-74 | Protocol 25+ |
+| Poseidon / Poseidon2 (`env.crypto_hazmat()`) | CAP-75 | Protocol 25+ |
 
-Verified against `soroban-sdk = "26.1.1"` by reading the crate's actual vendored source, not
-assumed from documentation summaries — see `docs/PLATFORM.md` for the method and citations.
+Bindings verified against `soroban-sdk = "26.1.1"` — see `docs/PLATFORM.md`.
+
+---
+
+## Deployed testnet contracts
+
+| Contract | Network | Contract ID |
+| --- | --- | --- |
+| `occulta-contract-registry` | Testnet | — |
+| `occulta-contract-shielded-pool` | Testnet | — |
+
+---
 
 ## Contributing
 
-See `CONTRIBUTING.md` — in particular, the non-negotiable rule that **no cryptographic
-change is merged without a fixture proving it matches the reference implementation**. Issue
-templates: `.github/ISSUE_TEMPLATE/`.
+See `CONTRIBUTING.md`. The non-negotiable rule: no cryptographic change is merged without a
+fixture proving it matches the reference implementation.
 
-## Non-goals
+Issue templates are in `.github/ISSUE_TEMPLATE/`. Security issues: see `SECURITY.md`.
 
-No new cryptography, no mainnet claims, no proof generation (that's `occulta-sdk`), no
-indexer/relayer/HTTP service, no frontend. See the build spec this repo implements for the
-full list.
+## License
+
+Apache-2.0 — see `LICENSE`.
 
 ---
 

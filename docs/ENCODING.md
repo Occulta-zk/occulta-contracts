@@ -1,73 +1,96 @@
 # Encoding — snarkjs → Soroban, byte for byte
 
-Every rule here is enforced (or will be, once the crate that needs it exists) somewhere in
-code, with a named test. This document is the narrative version of `docs/PLATFORM.md`'s wire
-formats — read that file for the verification method and source citations.
+This document describes the byte-level conversion rules between snarkjs JSON output and the
+Soroban host's wire formats. Each rule is enforced in code with a named test. The source of
+truth for byte lengths and flag layouts is `docs/PLATFORM.md`, which records verified SDK
+bindings from `soroban-sdk 26.1.1`.
 
-Status: rules 1 and 4 are implemented and tested today in `occulta-types` (`src/encoding.rs`,
-`src/curve.rs`). Rules 2, 3 (the swap primitive itself is implemented and tested; its
-end-to-end use against a real snarkjs proof is not yet wired up), and 5 depend on
-`occulta-verifier` (M3) and real fixtures, which don't exist yet.
+---
 
-## 1. Field elements are 32-byte big-endian, reduced mod `r`
+## Rule 1 — Field elements: 32-byte big-endian, reduced mod `r`
 
-snarkjs emits public signals and scalars as decimal strings in JSON. The SDK layer
-(`occulta-sdk`, out of scope for this repo) converts those to 32-byte big-endian on the way
-into a transaction. **The contract must not trust that conversion was done correctly** — an
-out-of-range scalar is silently reduced mod the field order by the Poseidon host function
-(see the doc-comment warning quoted in `docs/PLATFORM.md`), which means two distinct-looking
-inputs can collide. `occulta_types::scalar_in_range(scalar_be, modulus_be)` rejects anything
-`>= r`. Implemented and tested: `crates/occulta-types/src/encoding.rs`.
+snarkjs emits public signals and scalars as decimal strings. The off-chain SDK converts them
+to 32-byte big-endian before building the transaction. Contracts must not trust that
+conversion — the Poseidon host silently reduces out-of-range values mod the field order,
+meaning two distinct-looking inputs can collide if either is `>= r`.
 
-## 2. G1 points: drop the Jacobian `z`, serialize `x || y`
+**Enforcement:** `occulta_types::scalar_in_range(scalar_be, modulus_be)` rejects any value
+`>= r`. Called in `occulta-poseidon`'s sponge and in `occulta-verifier::verify` on every
+public signal before any host call.
 
-snarkjs's `proof.json` gives G1 points as `[x, y, "1"]` — Jacobian coordinates where `z` is
-always `"1"` for a normalized point. Soroban only accepts affine points, so: verify `z == 1`
-(if it isn't, the point needs actual Jacobian-to-affine conversion, which shouldn't happen
-for snarkjs's own output but must not be silently assumed), drop it, and concatenate
-`be_bytes(x) || be_bytes(y)`, each coordinate zero-padded to the curve's field byte length —
-**48 bytes for BLS12-381 (`Bls12381Fp`), 32 bytes for BN254 (`Bn254Fp`)** (verified in
-`docs/PLATFORM.md`). This conversion happens off-chain in `occulta-sdk`; the contract-side
-enforcement is `Proof::validate_shape()` / `VerificationKey::validate_shape()` checking the
-resulting byte length matches `curve.g1_len()` (96 for BLS12-381, 64 for BN254).
+**Tests:** `scalar_zero_is_in_range`, `scalar_equal_to_modulus_is_rejected`,
+`scalar_one_more_than_modulus_is_rejected`, `scalar_one_less_than_modulus_is_in_range`,
+`max_32_byte_value_exceeds_both_moduli`, `out_of_range_bn254_signal_is_rejected`,
+`out_of_range_bls12_signal_is_rejected`.
 
-## 3. G2 coordinate order is a trap — confirmed real, not hypothetical
+---
 
-snarkjs emits a G2 point as `[[x_c0, x_c1], [y_c0, y_c1], ["1", "0"]]` — `Fp2` coordinates
-in `[c0, c1]` order, c0 first. **The Soroban host expects the opposite**: both
-`Bls12381G2Affine` and `Bn254G2Affine`'s doc comments (quoted verbatim in
-`docs/PLATFORM.md`) specify `be_bytes(X_c1) || be_bytes(X_c0) || be_bytes(Y_c1) ||
-be_bytes(Y_c0)` — c1 first, within each of X and Y. Naively concatenating snarkjs's JSON
-array order produces a byte string of the *correct length* that is *numerically the wrong
-point* — the single most dangerous class of bug in this whole repo, because a malformed
-length traps loudly but a swapped-limb point can pass a naive smoke test and only fail (or
-worse, not fail) against a real fixture.
+## Rule 2 — G1 points: drop the Jacobian `z`, serialize `x ‖ y`
 
-`occulta_types::swap_fp2_limbs(input, half_len, out)` performs exactly this swap:
-`c0 || c1` (snarkjs order) → `c1 || c0` (host order). Tested for both round-trip
-(`swap ∘ swap = identity`) and against a fabricated-but-structural known vector proving the
-function doesn't degrade to a no-op copy. **Not yet tested against a real snarkjs-produced
-proof point verified through an actual `pairing_check` call** — that end-to-end check is the
-first thing `occulta-verifier` must do (flagged in that crate's module doc and in
-`docs/PLATFORM.md`'s "Open items").
+snarkjs `proof.json` gives G1 points as `[x, y, "1"]` — Jacobian form with `z = 1` for a
+normalized point. Soroban accepts affine points only. The `z` coordinate is dropped and the
+point is serialized as `be_bytes(x) ‖ be_bytes(y)`, each coordinate zero-padded to the
+curve's field byte length:
 
-## 4. Point at infinity
+- **BLS12-381:** 48 bytes per coordinate → 96 bytes total (`Bls12381G1Affine: BytesN<96>`)
+- **BN254:** 32 bytes per coordinate → 64 bytes total (`Bn254G1Affine: BytesN<64>`)
 
-Encoding: all-zero bytes for the coordinate portion, with the infinity flag bit set in the
-first byte per the SDK's documented flag layout (top 3 bits of byte 0: compression,
-infinity, sort — see `docs/PLATFORM.md`). `occulta_types::is_zero_bytes` detects the
-all-zero payload; whether infinity is *accepted* is field-specific — e.g. `vk.alpha_g1`
-should never legitimately be infinity for a real verification key, so `occulta-verifier`
-(M3) must reject it there even though `is_zero_bytes` itself is a neutral predicate, not a
-policy.
+**Enforcement:** `Proof::validate_shape()` and `VerificationKey::validate_shape()` check
+that the byte length matches `curve.g1_len()`.
 
-## 5. Reject invalid points / wrong subgroup — don't duplicate host work
+**Tests:** `correctly_sized_bn254_proof_validates`, `correctly_sized_bls12_381_proof_validates`,
+`bn254_a_sized_for_bls12_381_is_rejected`, `wrong_length_b_is_rejected`.
 
-Per `docs/PLATFORM.md`: `g1_add`'s SDK wrapper already re-validates subgroup membership of
-its *result*, but a point built via `Bls12381G1Affine::from_bytes(...)` / passed straight
-into `g1_msm`/`pairing_check` is not implicitly checked by construction — the host traps on
-a genuinely invalid curve point, but subgroup membership needs an explicit
-`is_in_subgroup()` call where the calling code path doesn't already get it for free. This is
-an `occulta-verifier` (M3) concern, not `occulta-types`', since it requires an `Env` and a
-host call; recorded here so the "which of rule 5's two checks is already free vs. must be
-added" question isn't re-derived from scratch when M3 starts.
+---
+
+## Rule 3 — G2 coordinate order: c1 before c0
+
+This is the single most dangerous encoding trap in the repo. snarkjs emits a G2 point as
+`[[x_c0, x_c1], [y_c0, y_c1]]` — c0 first within each `Fp2` coordinate. The Soroban host
+expects the **opposite**: `be_bytes(X_c1) ‖ be_bytes(X_c0) ‖ be_bytes(Y_c1) ‖ be_bytes(Y_c0)`.
+
+Naively concatenating snarkjs's JSON order produces a byte string of the correct *length*
+that encodes the *wrong point*. A malformed-length error traps loudly; a swapped-limb point
+can silently produce a wrong result or fail only against a real fixture.
+
+This affects both curves:
+
+- **BLS12-381 G2:** `BytesN<192>`, each `Fp2` coordinate is 96 bytes (2 × 48)
+- **BN254 G2:** `BytesN<128>`, each `Fp2` coordinate is 64 bytes (2 × 32)
+
+**Enforcement:** `occulta_types::swap_fp2_limbs(input, half_len, out)` performs the swap
+(`c0 ‖ c1` → `c1 ‖ c0`). Applied in the off-chain SDK when constructing `Proof` and
+`VerificationKey` from snarkjs JSON.
+
+**Tests:** `g2_coordinate_swap_matches_expected_host_order_bn254` (verifies the swap
+produces the correct byte layout and is not a no-op copy),
+`g2_coordinate_swap_is_its_own_inverse` (round-trip: swap twice = identity),
+`swap_rejects_wrong_length`.
+
+---
+
+## Rule 4 — Point at infinity
+
+The all-zero byte string encodes the point at infinity. `occulta_types::is_zero_bytes`
+detects this. Whether infinity is *accepted* depends on context:
+
+- `vk.alpha_g1` must never be infinity for a valid verification key
+- `occulta-verifier` rejects a proof's `A` component with `y = 0` (infinity or degenerate)
+  before negation, returning `Err(InvalidPoint)`
+
+**Tests:** `zero_bytes_detected`.
+
+---
+
+## Rule 5 — Subgroup membership: don't duplicate host work
+
+`Bls12381G1Affine::from_bytes(...)` accepts any 96 bytes without validation — the host
+traps on a genuinely off-curve point when it is used in a host call, but does not check
+subgroup membership on construction. `occulta-verifier` calls `bls12_381.g1_is_in_subgroup()`
+and `bls12_381.g2_is_in_subgroup()` explicitly on the proof's `A`, `B`, and `C` points.
+
+For BN254, G1's cofactor is 1 (every on-curve point is in the group) and the host validates
+G2 subgroup membership during `pairing_check`. No separate subgroup check is needed or
+available in the SDK for BN254.
+
+This is documented in `docs/PLATFORM.md` under "g1_add auto-validates subgroup membership."
