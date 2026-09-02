@@ -54,7 +54,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --version ^23
+        # Pinned exact (not a `^23` range): an open range re-resolves on every run, so a new
+        # patch release or a yanked transitive dependency can break `--locked` with no change
+        # in this repo. Bump deliberately when needed.
+        run: cargo install --locked stellar-cli --version 23.4.1
       - name: Build every deployable contract
         run: |
           for dir in contracts/*/ apps/*/; do
