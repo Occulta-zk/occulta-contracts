@@ -15,7 +15,7 @@
 //! Groth16 proof `A` should never be infinity, so we treat `y == 0` as invalid and error out
 //! to catch encoding bugs early.
 
-use occulta_types::{is_zero_bytes, VerificationKey, Proof};
+use occulta_types::{is_zero_bytes, Proof, VerificationKey};
 use soroban_sdk::{Bytes, BytesN, Env, Vec, U256};
 
 use crate::VerifierError;
@@ -26,12 +26,9 @@ use crate::VerifierError;
 /// Source: https://github.com/zcash/librustzcash/blob/main/pairing/src/bls12_381/README.md
 /// and cross-checked with the `ark-bls12-381` crate constant `Fq::MODULUS`.
 const BLS12_381_FP_MODULUS_BE: [u8; 48] = [
-    0x1a, 0x01, 0x11, 0xea, 0x39, 0x7f, 0xe6, 0x9a,
-    0x4b, 0x1b, 0xa7, 0xb6, 0x43, 0x4b, 0xac, 0xd7,
-    0x64, 0x77, 0x4b, 0x84, 0xf3, 0x85, 0x12, 0xbf,
-    0x67, 0x30, 0xd2, 0xa0, 0xf6, 0xb0, 0xf6, 0x24,
-    0x1e, 0xab, 0xff, 0xfe, 0xb1, 0x53, 0xff, 0xff,
-    0xb9, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xaa, 0xab,
+    0x1a, 0x01, 0x11, 0xea, 0x39, 0x7f, 0xe6, 0x9a, 0x4b, 0x1b, 0xa7, 0xb6, 0x43, 0x4b, 0xac, 0xd7,
+    0x64, 0x77, 0x4b, 0x84, 0xf3, 0x85, 0x12, 0xbf, 0x67, 0x30, 0xd2, 0xa0, 0xf6, 0xb0, 0xf6, 0x24,
+    0x1e, 0xab, 0xff, 0xfe, 0xb1, 0x53, 0xff, 0xff, 0xb9, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xaa, 0xab,
 ];
 
 /// Negate a BLS12-381 G1 affine point by flipping its Y coordinate: `(x, y) → (x, p - y)`.
@@ -203,16 +200,13 @@ pub fn verify(
 
 /// Convert a variable-length `Bytes` into a `BytesN<N>` — fails with `MalformedVerificationKey`
 /// if the length is wrong. This handles the length mismatch case gracefully instead of panicking.
-fn bytes_to_fixed<const N: usize>(
-    env: &Env,
-    b: &Bytes,
-) -> Result<BytesN<N>, VerifierError> {
+fn bytes_to_fixed<const N: usize>(env: &Env, b: &Bytes) -> Result<BytesN<N>, VerifierError> {
     if b.len() as usize != N {
         return Err(VerifierError::MalformedVerificationKey);
     }
     let mut arr = [0u8; N];
-    for i in 0..N {
-        arr[i] = b.get_unchecked(i as u32);
+    for (i, byte) in arr.iter_mut().enumerate() {
+        *byte = b.get_unchecked(i as u32);
     }
     Ok(BytesN::from_array(env, &arr))
 }
@@ -221,8 +215,8 @@ fn bytes_to_fixed<const N: usize>(
 fn u256_to_bytes32(env: &Env, v: &U256) -> BytesN<32> {
     let be = v.to_be_bytes();
     let mut arr = [0u8; 32];
-    for i in 0..32u32 {
-        arr[i as usize] = be.get_unchecked(i);
+    for (i, byte) in arr.iter_mut().enumerate() {
+        *byte = be.get_unchecked(i as u32);
     }
     BytesN::from_array(env, &arr)
 }

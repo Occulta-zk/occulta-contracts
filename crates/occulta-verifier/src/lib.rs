@@ -52,8 +52,11 @@ pub fn verify(
     public_signals: &Vec<U256>,
 ) -> Result<bool, VerifierError> {
     // Structural checks first — quick and cheap before touching any crypto.
-    vk.validate_shape().map_err(|_| VerifierError::MalformedVerificationKey)?;
-    proof.validate_shape().map_err(|_| VerifierError::MalformedVerificationKey)?;
+    vk.validate_shape()
+        .map_err(|_| VerifierError::MalformedVerificationKey)?;
+    proof
+        .validate_shape()
+        .map_err(|_| VerifierError::MalformedVerificationKey)?;
 
     if vk.curve != proof.curve {
         return Err(VerifierError::MalformedVerificationKey);
@@ -92,4 +95,3 @@ pub(crate) fn u256_to_be32(v: &U256) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests;
-

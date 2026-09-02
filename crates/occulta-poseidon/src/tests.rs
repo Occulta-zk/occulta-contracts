@@ -17,7 +17,11 @@ use soroban_sdk::{Bytes, Env, Vec, U256};
 use crate::{Poseidon, PoseidonError};
 
 fn hex_to_u256(env: &Env, hex_no_prefix: &str) -> U256 {
-    assert_eq!(hex_no_prefix.len(), 64, "fixture hex must be exactly 32 bytes");
+    assert_eq!(
+        hex_no_prefix.len(),
+        64,
+        "fixture hex must be exactly 32 bytes"
+    );
     let mut bytes = [0u8; 32];
     for i in 0..32 {
         bytes[i] = u8::from_str_radix(&hex_no_prefix[i * 2..i * 2 + 2], 16).unwrap();
@@ -37,7 +41,10 @@ fn bn254_hash2_fixture_0() {
     let left = u32_input(&env, 0);
     let right = u32_input(&env, 0);
     let got = Poseidon::hash2(&env, Curve::Bn254, &left, &right).unwrap();
-    let expected = hex_to_u256(&env, "2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864");
+    let expected = hex_to_u256(
+        &env,
+        "2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864",
+    );
     assert_eq!(got, expected, "inputs: 0, 0");
 }
 
@@ -47,7 +54,10 @@ fn bn254_hash2_fixture_1() {
     let left = u32_input(&env, 0);
     let right = u32_input(&env, 1);
     let got = Poseidon::hash2(&env, Curve::Bn254, &left, &right).unwrap();
-    let expected = hex_to_u256(&env, "1bd20834f5de9830c643778a2e88a3a1363c8b9ac083d36d75bf87c49953e65e");
+    let expected = hex_to_u256(
+        &env,
+        "1bd20834f5de9830c643778a2e88a3a1363c8b9ac083d36d75bf87c49953e65e",
+    );
     assert_eq!(got, expected, "inputs: 0, 1");
 }
 
@@ -57,18 +67,30 @@ fn bn254_hash2_fixture_2() {
     let left = u32_input(&env, 1);
     let right = u32_input(&env, 2);
     let got = Poseidon::hash2(&env, Curve::Bn254, &left, &right).unwrap();
-    let expected = hex_to_u256(&env, "115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a");
+    let expected = hex_to_u256(
+        &env,
+        "115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a",
+    );
     assert_eq!(got, expected, "inputs: 1, 2");
 }
 
 #[test]
 fn bn254_hash2_fixture_3() {
     let env = Env::default();
-    let left = hex_to_u256(&env, "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000");
+    let left = hex_to_u256(
+        &env,
+        "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000",
+    );
     let right = u32_input(&env, 1);
     let got = Poseidon::hash2(&env, Curve::Bn254, &left, &right).unwrap();
-    let expected = hex_to_u256(&env, "241af30a65318c4636803d8133f87ce755ed485f10695563caff5ed186bccf7d");
-    assert_eq!(got, expected, "inputs: 21888242871839275222246405745257275088548364400416034343698204186575808495616, 1");
+    let expected = hex_to_u256(
+        &env,
+        "241af30a65318c4636803d8133f87ce755ed485f10695563caff5ed186bccf7d",
+    );
+    assert_eq!(
+        got, expected,
+        "inputs: 21888242871839275222246405745257275088548364400416034343698204186575808495616, 1"
+    );
 }
 
 #[test]
@@ -77,7 +99,10 @@ fn bn254_hash_n_fixture_0() {
     let mut inputs: Vec<U256> = Vec::new(&env);
     inputs.push_back(u32_input(&env, 1));
     let got = Poseidon::hash_n(&env, Curve::Bn254, &inputs).unwrap();
-    let expected = hex_to_u256(&env, "29176100eaa962bdc1fe6c654d6a3c130e96a4d1168b33848b897dc502820133");
+    let expected = hex_to_u256(
+        &env,
+        "29176100eaa962bdc1fe6c654d6a3c130e96a4d1168b33848b897dc502820133",
+    );
     assert_eq!(got, expected, "inputs: 1");
 }
 
@@ -89,7 +114,10 @@ fn bn254_hash_n_fixture_1() {
     inputs.push_back(u32_input(&env, 2));
     inputs.push_back(u32_input(&env, 3));
     let got = Poseidon::hash_n(&env, Curve::Bn254, &inputs).unwrap();
-    let expected = hex_to_u256(&env, "0e7732d89e6939c0ff03d5e58dab6302f3230e269dc5b968f725df34ab36d732");
+    let expected = hex_to_u256(
+        &env,
+        "0e7732d89e6939c0ff03d5e58dab6302f3230e269dc5b968f725df34ab36d732",
+    );
     assert_eq!(got, expected, "inputs: 1, 2, 3");
 }
 
@@ -103,7 +131,10 @@ fn bls12_381_hash_n_fixture_0() {
     let mut inputs: Vec<U256> = Vec::new(&env);
     inputs.push_back(u32_input(&env, 1));
     let got = Poseidon::hash_n(&env, Curve::Bls12_381, &inputs).unwrap();
-    let expected = hex_to_u256(&env, "1dc37ce34aeee058292bb73bff9acffce73a8a92f3d6d1daa8b77d9516b5c837");
+    let expected = hex_to_u256(
+        &env,
+        "1dc37ce34aeee058292bb73bff9acffce73a8a92f3d6d1daa8b77d9516b5c837",
+    );
     assert_eq!(got, expected, "inputs: 1");
 }
 
@@ -113,7 +144,10 @@ fn bls12_381_hash2_fixture_1() {
     let left = u32_input(&env, 1);
     let right = u32_input(&env, 2);
     let got = Poseidon::hash2(&env, Curve::Bls12_381, &left, &right).unwrap();
-    let expected = hex_to_u256(&env, "200e6982ac00df8fa65cef1fde9f21373fdbbfd98f2df1eb5fa04f3302ab0397");
+    let expected = hex_to_u256(
+        &env,
+        "200e6982ac00df8fa65cef1fde9f21373fdbbfd98f2df1eb5fa04f3302ab0397",
+    );
     assert_eq!(got, expected, "inputs: 1, 2");
 }
 
@@ -123,7 +157,10 @@ fn bls12_381_hash2_fixture_2() {
     let left = u32_input(&env, 0);
     let right = u32_input(&env, 0);
     let got = Poseidon::hash2(&env, Curve::Bls12_381, &left, &right).unwrap();
-    let expected = hex_to_u256(&env, "60351d345576275c676667b0b05fe317ac89f7f5d827b4c94f137be8f65fb2e9");
+    let expected = hex_to_u256(
+        &env,
+        "60351d345576275c676667b0b05fe317ac89f7f5d827b4c94f137be8f65fb2e9",
+    );
     assert_eq!(got, expected, "inputs: 0, 0");
 }
 
@@ -135,7 +172,10 @@ fn bls12_381_hash_n_fixture_3() {
     inputs.push_back(u32_input(&env, 2));
     inputs.push_back(u32_input(&env, 3));
     let got = Poseidon::hash_n(&env, Curve::Bls12_381, &inputs).unwrap();
-    let expected = hex_to_u256(&env, "3ee96c25cccd2d4ce9423040834a34e61fccbd98d1820ee60d31098867511dc3");
+    let expected = hex_to_u256(
+        &env,
+        "3ee96c25cccd2d4ce9423040834a34e61fccbd98d1820ee60d31098867511dc3",
+    );
     assert_eq!(got, expected, "inputs: 1, 2, 3");
 }
 
@@ -174,7 +214,10 @@ fn hash_n_rejects_unsupported_arity() {
 fn hash2_rejects_out_of_range_scalar() {
     let env = Env::default();
     // BN254 field modulus itself is out of range (valid range is [0, modulus)).
-    let out_of_range = hex_to_u256(&env, "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001");
+    let out_of_range = hex_to_u256(
+        &env,
+        "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+    );
     let one = u32_input(&env, 1);
     let err = Poseidon::hash2(&env, Curve::Bn254, &out_of_range, &one).unwrap_err();
     assert_eq!(err, PoseidonError::ScalarOutOfRange);
@@ -204,5 +247,8 @@ fn budget_probe_hash2_bn254() {
     let a = u32_input(&env, 1);
     let b = u32_input(&env, 2);
     let _ = Poseidon::hash2(&env, Curve::Bn254, &a, &b).unwrap();
-    std::println!("hash2(BN254) cpu_instruction_cost = {}", budget.cpu_instruction_cost());
+    std::println!(
+        "hash2(BN254) cpu_instruction_cost = {}",
+        budget.cpu_instruction_cost()
+    );
 }

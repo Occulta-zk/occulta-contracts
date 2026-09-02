@@ -28,3 +28,7 @@ secrets.*
 
 # Stellar CLI artifacts
 .soroban/
+
+# soroban-sdk test debug snapshots, auto-written on `cargo test` failures/panics
+test_snapshots/
+**/test_snapshots/

@@ -152,10 +152,7 @@ fn permuted_signals_do_not_silently_succeed() {
         r_ab != Ok(true),
         "synthetic zero-point proof must not verify as true"
     );
-    assert!(
-        r_ba != Ok(true),
-        "permuted signals must not verify as true"
-    );
+    assert!(r_ba != Ok(true), "permuted signals must not verify as true");
 }
 
 /// Out-of-range scalar — Security Invariant #8.
@@ -166,10 +163,9 @@ fn out_of_range_bn254_signal_is_rejected() {
     // One-past-the-modulus: 0x30644e72...f0000002.
     let mut over_bytes = [0u8; 32];
     let modulus_be = [
-        0x30u8, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29,
-        0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
-        0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91,
-        0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00, 0x00, 0x01,
+        0x30u8, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58,
+        0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00,
+        0x00, 0x01,
     ];
     over_bytes.copy_from_slice(&modulus_be);
     over_bytes[31] = over_bytes[31].wrapping_add(1); // modulus + 1
@@ -177,10 +173,7 @@ fn out_of_range_bn254_signal_is_rejected() {
     let vk = make_bn254_vk(&env, 2); // 1 signal
     let proof = make_bn254_proof(&env);
     let mut sigs = Vec::new(&env);
-    let over_u256 = U256::from_be_bytes(
-        &env,
-        &soroban_sdk::Bytes::from_array(&env, &over_bytes),
-    );
+    let over_u256 = U256::from_be_bytes(&env, &soroban_sdk::Bytes::from_array(&env, &over_bytes));
     sigs.push_back(over_u256);
 
     let err = verify(&env, &vk, &proof, &sigs).unwrap_err();
@@ -193,10 +186,9 @@ fn out_of_range_bls12_signal_is_rejected() {
     // BLS12-381 Fr modulus + 1 (last byte is 0x01, wraps to 0x02 without overflow).
     let mut over_bytes = [0u8; 32];
     let modulus_be = [
-        0x73u8, 0xed, 0xa7, 0x53, 0x29, 0x9d, 0x7d, 0x48,
-        0x33, 0x39, 0xd8, 0x08, 0x09, 0xa1, 0xd8, 0x05,
-        0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe,
-        0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
+        0x73u8, 0xed, 0xa7, 0x53, 0x29, 0x9d, 0x7d, 0x48, 0x33, 0x39, 0xd8, 0x08, 0x09, 0xa1, 0xd8,
+        0x05, 0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
+        0x00, 0x01,
     ];
     over_bytes.copy_from_slice(&modulus_be);
     over_bytes[31] = over_bytes[31].wrapping_add(1);
@@ -204,10 +196,7 @@ fn out_of_range_bls12_signal_is_rejected() {
     let vk = make_bls12_vk(&env, 2);
     let proof = make_bls12_proof(&env);
     let mut sigs = Vec::new(&env);
-    let over_u256 = U256::from_be_bytes(
-        &env,
-        &soroban_sdk::Bytes::from_array(&env, &over_bytes),
-    );
+    let over_u256 = U256::from_be_bytes(&env, &soroban_sdk::Bytes::from_array(&env, &over_bytes));
     sigs.push_back(over_u256);
 
     let err = verify(&env, &vk, &proof, &sigs).unwrap_err();

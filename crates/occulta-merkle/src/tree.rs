@@ -154,19 +154,6 @@ fn persist_get_u256_str(env: &Env, key: &String) -> Option<U256> {
     env.storage().persistent().get::<String, U256>(key)
 }
 
-fn persist_set_u256_sym(env: &Env, key: &Symbol, value: &U256) {
-    // SECURITY: persistent() — Do NOT change to temporary().
-    env.storage().persistent().set(key, value);
-    env.storage()
-        .persistent()
-        .extend_ttl(key, TREE_TTL, TREE_TTL);
-}
-
-fn persist_get_u256_sym(env: &Env, key: &Symbol) -> Option<U256> {
-    // SECURITY: persistent() — Do NOT change to temporary().
-    env.storage().persistent().get::<Symbol, U256>(key)
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -244,7 +231,7 @@ impl Tree {
         let mut current_level_hash = commitment.clone();
 
         for i in 0..depth {
-            let (left, right) = if current_index % 2 == 0 {
+            let (left, right) = if current_index.is_multiple_of(2) {
                 // Even index: this node is a left child.
                 // Store it in filled_subtrees for use when its sibling arrives.
                 persist_set_u256_str(env, &key_fs(env, i), &current_level_hash);
@@ -287,8 +274,7 @@ impl Tree {
         let rhs = persist_get_u32(env, &key_root_history_size(), cfg.root_history_size);
         let cur_pos = persist_get_u32(env, &key_current_ring_pos(), 0);
         let _ = rhs; // rhs used above; current pos wraps within rhs
-        persist_get_u256_str(env, &key_root(env, cur_pos))
-            .unwrap_or_else(|| U256::from_u32(env, 0))
+        persist_get_u256_str(env, &key_root(env, cur_pos)).unwrap_or_else(|| U256::from_u32(env, 0))
     }
 
     /// Check whether `root` is the current root or one of the last `root_history_size` roots.
@@ -315,171 +301,218 @@ impl Tree {
 mod tests {
     extern crate std;
     use super::*;
-    use soroban_sdk::Env;
+    use soroban_sdk::{contract, Env};
 
-    fn bn254_cfg(depth: u32, history: u32) -> TreeConfig {
-        TreeConfig {
+    /// Storage (`env.storage()...`) only works inside a registered contract's context
+    /// (soroban-sdk panics otherwise: "this function is not accessible outside of a
+    /// contract"). This is a bare marker contract registered solely so tests can enter
+    /// that context via `env.as_contract()` — it has no `#[contractimpl]` of its own.
+    #[contract]
+    struct TestContract;
+
+    /// Set up a fresh env with a registered dummy contract, and return both plus the
+    /// tree config used across these tests.
+    fn setup(depth: u32, history: u32) -> (Env, soroban_sdk::Address, TreeConfig) {
+        let env = Env::default();
+        // A depth-20 tree does up to ~20 Poseidon hashes per insert plus root-history scans
+        // touching up to `root_history_size` storage keys. soroban-sdk 26 enables, by default,
+        // both a CPU/memory instruction budget AND a simulated mainnet invocation-footprint
+        // limit (max ~100 ledger entries touched) tuned for typical single-call contract
+        // tests — too tight for these correctness tests. Relaxing both here only affects test
+        // accounting, not what gets deployed; real callers still pick depth/root_history_size
+        // within actual network limits.
+        env.cost_estimate().budget().reset_unlimited();
+        env.cost_estimate().disable_resource_limits();
+        let contract_id = env.register(TestContract, ());
+        let cfg = TreeConfig {
             depth,
             curve: Curve::Bn254,
             root_history_size: history,
-        }
+        };
+        (env, contract_id, cfg)
     }
 
     #[test]
     fn init_succeeds_and_produces_a_nonzero_root() {
-        let env = Env::default();
-        let cfg = bn254_cfg(20, 30);
-        Tree::init(&env, &cfg).expect("init should succeed");
-        let root = Tree::current_root(&env, &cfg);
-        // The all-zero tree's root is hash2(hash2(...)) repeated depth times; it must be
-        // non-zero (Poseidon doesn't map all-zero to zero).
-        assert_ne!(root, U256::from_u32(&env, 0));
+        let (env, contract_id, cfg) = setup(20, 30);
+        env.as_contract(&contract_id, || {
+            Tree::init(&env, &cfg).expect("init should succeed");
+            let root = Tree::current_root(&env, &cfg);
+            // The all-zero tree's root is hash2(hash2(...)) repeated depth times; it must be
+            // non-zero (Poseidon doesn't map all-zero to zero).
+            assert_ne!(root, U256::from_u32(&env, 0));
+        });
     }
 
     #[test]
     fn init_rejects_depth_out_of_range() {
-        let env = Env::default();
-        assert_eq!(
-            Tree::init(&env, &bn254_cfg(10, 30)),
-            Err(MerkleError::InvalidDepth)
-        );
-        assert_eq!(
-            Tree::init(&env, &bn254_cfg(33, 30)),
-            Err(MerkleError::InvalidDepth)
-        );
+        let (env, contract_id, _cfg) = setup(20, 30);
+        env.as_contract(&contract_id, || {
+            let too_shallow = TreeConfig {
+                depth: 10,
+                curve: Curve::Bn254,
+                root_history_size: 30,
+            };
+            let too_deep = TreeConfig {
+                depth: 33,
+                curve: Curve::Bn254,
+                root_history_size: 30,
+            };
+            assert_eq!(
+                Tree::init(&env, &too_shallow),
+                Err(MerkleError::InvalidDepth)
+            );
+            assert_eq!(Tree::init(&env, &too_deep), Err(MerkleError::InvalidDepth));
+        });
     }
 
     #[test]
     fn init_rejects_zero_history_size() {
-        let env = Env::default();
-        assert_eq!(
-            Tree::init(&env, &bn254_cfg(20, 0)),
-            Err(MerkleError::InvalidRootHistorySize)
-        );
+        let (env, contract_id, cfg) = setup(20, 0);
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                Tree::init(&env, &cfg),
+                Err(MerkleError::InvalidRootHistorySize)
+            );
+        });
     }
 
     #[test]
     fn single_insert_changes_root() {
-        let env = Env::default();
-        let cfg = bn254_cfg(20, 30);
-        Tree::init(&env, &cfg).unwrap();
-        let root_before = Tree::current_root(&env, &cfg);
+        let (env, contract_id, cfg) = setup(20, 30);
+        env.as_contract(&contract_id, || {
+            Tree::init(&env, &cfg).unwrap();
+            let root_before = Tree::current_root(&env, &cfg);
 
-        let commitment = U256::from_u32(&env, 42);
-        let idx = Tree::insert(&env, &cfg, commitment).unwrap();
-        assert_eq!(idx, 0);
+            let commitment = U256::from_u32(&env, 42);
+            let idx = Tree::insert(&env, &cfg, commitment).unwrap();
+            assert_eq!(idx, 0);
 
-        let root_after = Tree::current_root(&env, &cfg);
-        assert_ne!(root_before, root_after, "inserting a leaf must change the root");
+            let root_after = Tree::current_root(&env, &cfg);
+            assert_ne!(
+                root_before, root_after,
+                "inserting a leaf must change the root"
+            );
+        });
     }
 
     #[test]
     fn two_inserts_return_sequential_indices() {
-        let env = Env::default();
-        let cfg = bn254_cfg(20, 30);
-        Tree::init(&env, &cfg).unwrap();
+        let (env, contract_id, cfg) = setup(20, 30);
+        env.as_contract(&contract_id, || {
+            Tree::init(&env, &cfg).unwrap();
 
-        let a = Tree::insert(&env, &cfg, U256::from_u32(&env, 1)).unwrap();
-        let b = Tree::insert(&env, &cfg, U256::from_u32(&env, 2)).unwrap();
-        assert_eq!(a, 0);
-        assert_eq!(b, 1);
+            let a = Tree::insert(&env, &cfg, U256::from_u32(&env, 1)).unwrap();
+            let b = Tree::insert(&env, &cfg, U256::from_u32(&env, 2)).unwrap();
+            assert_eq!(a, 0);
+            assert_eq!(b, 1);
+        });
     }
 
     #[test]
     fn initial_root_is_known() {
-        let env = Env::default();
-        let cfg = bn254_cfg(20, 30);
-        Tree::init(&env, &cfg).unwrap();
-        let initial_root = Tree::current_root(&env, &cfg);
-        assert!(Tree::is_known_root(&env, &cfg, &initial_root));
+        let (env, contract_id, cfg) = setup(20, 30);
+        env.as_contract(&contract_id, || {
+            Tree::init(&env, &cfg).unwrap();
+            let initial_root = Tree::current_root(&env, &cfg);
+            assert!(Tree::is_known_root(&env, &cfg, &initial_root));
+        });
     }
 
     #[test]
     fn post_insert_root_is_known() {
-        let env = Env::default();
-        let cfg = bn254_cfg(20, 30);
-        Tree::init(&env, &cfg).unwrap();
-        Tree::insert(&env, &cfg, U256::from_u32(&env, 1)).unwrap();
-        let current = Tree::current_root(&env, &cfg);
-        assert!(Tree::is_known_root(&env, &cfg, &current));
+        let (env, contract_id, cfg) = setup(20, 30);
+        env.as_contract(&contract_id, || {
+            Tree::init(&env, &cfg).unwrap();
+            Tree::insert(&env, &cfg, U256::from_u32(&env, 1)).unwrap();
+            let current = Tree::current_root(&env, &cfg);
+            assert!(Tree::is_known_root(&env, &cfg, &current));
+        });
     }
 
     /// Root history: after k inserts, all roots from max(0, k - rhs)..=k are known;
     /// roots older than `rhs` are forgotten.
     #[test]
     fn root_history_keeps_last_n_roots() {
-        let env = Env::default();
         let rhs = 5u32;
-        let cfg = bn254_cfg(20, rhs);
-        Tree::init(&env, &cfg).unwrap();
+        let (env, contract_id, cfg) = setup(20, rhs);
+        env.as_contract(&contract_id, || {
+            Tree::init(&env, &cfg).unwrap();
 
-        // Collect 8 roots (initial + 7 inserts).
-        let mut roots = std::vec::Vec::new();
-        roots.push(Tree::current_root(&env, &cfg));
-
-        for i in 0..7u32 {
-            Tree::insert(&env, &cfg, U256::from_u32(&env, i + 1)).unwrap();
+            // Collect 8 roots (initial + 7 inserts).
+            let mut roots = std::vec::Vec::new();
             roots.push(Tree::current_root(&env, &cfg));
-        }
-        // roots[0] = initial (8 inserts ago, beyond rhs=5 — should be forgotten)
-        // roots[1..=2] = after first 2 inserts (too old)
-        // roots[3..=7] = after inserts 3-7 (within last 5 — should be known)
-        // Total 8 roots. rhs=5 so only the last 5 should be known.
 
-        let current = Tree::current_root(&env, &cfg);
-        assert_eq!(current, roots[7]);
+            for i in 0..7u32 {
+                Tree::insert(&env, &cfg, U256::from_u32(&env, i + 1)).unwrap();
+                roots.push(Tree::current_root(&env, &cfg));
+            }
+            // roots[0] = initial (8 inserts ago, beyond rhs=5 — should be forgotten)
+            // roots[1..=2] = after first 2 inserts (too old)
+            // roots[3..=7] = after inserts 3-7 (within last 5 — should be known)
+            // Total 8 roots. rhs=5 so only the last 5 should be known.
 
-        // The last `rhs` roots must all be known.
-        for root in roots.iter().rev().take(rhs as usize) {
+            let current = Tree::current_root(&env, &cfg);
+            assert_eq!(current, roots[7]);
+
+            // The last `rhs` roots must all be known.
+            for root in roots.iter().rev().take(rhs as usize) {
+                assert!(
+                    Tree::is_known_root(&env, &cfg, root),
+                    "recent root must be in history"
+                );
+            }
+
+            // The oldest root (roots[0]) should NOT be known after 7 inserts into rhs=5.
+            // roots[0] is 7 slots behind the current position; rhs=5 so it wrapped.
+            // Note: with rhs=5, after 7 inserts positions 0..4 have been reused;
+            // roots[0] was at position 0 and has been overwritten by insert 5.
+            // roots[0] through roots[2] are all older than rhs=5 positions ago.
+            let very_old = &roots[0];
+            // Only assert "not known" if it's genuinely older than rhs.
+            // With 7 inserts and rhs=5, roots 0-2 were overwritten.
             assert!(
-                Tree::is_known_root(&env, &cfg, root),
-                "recent root must be in history"
+                !Tree::is_known_root(&env, &cfg, very_old),
+                "root more than rhs inserts old must be evicted from history"
             );
-        }
-
-        // The oldest root (roots[0]) should NOT be known after 7 inserts into rhs=5.
-        // roots[0] is 7 slots behind the current position; rhs=5 so it wrapped.
-        // Note: with rhs=5, after 7 inserts positions 0..4 have been reused;
-        // roots[0] was at position 0 and has been overwritten by insert 5.
-        // roots[0] through roots[2] are all older than rhs=5 positions ago.
-        let very_old = &roots[0];
-        // Only assert "not known" if it's genuinely older than rhs.
-        // With 7 inserts and rhs=5, roots 0-2 were overwritten.
-        assert!(
-            !Tree::is_known_root(&env, &cfg, very_old),
-            "root more than rhs inserts old must be evicted from history"
-        );
+        });
     }
 
     #[test]
     fn unknown_root_is_not_known() {
-        let env = Env::default();
-        let cfg = bn254_cfg(20, 30);
-        Tree::init(&env, &cfg).unwrap();
-        let fake_root = U256::from_u32(&env, 0xdeadbeef);
-        assert!(!Tree::is_known_root(&env, &cfg, &fake_root));
+        let (env, contract_id, cfg) = setup(20, 30);
+        env.as_contract(&contract_id, || {
+            Tree::init(&env, &cfg).unwrap();
+            let fake_root = U256::from_u32(&env, 0xdeadbeef);
+            assert!(!Tree::is_known_root(&env, &cfg, &fake_root));
+        });
     }
 
     #[test]
     fn insert_emits_event() {
-        let env = Env::default();
-        let cfg = bn254_cfg(20, 30);
-        Tree::init(&env, &cfg).unwrap();
+        let (env, contract_id, cfg) = setup(20, 30);
+        env.as_contract(&contract_id, || {
+            Tree::init(&env, &cfg).unwrap();
 
-        Tree::insert(&env, &cfg, U256::from_u32(&env, 99)).unwrap();
+            Tree::insert(&env, &cfg, U256::from_u32(&env, 99)).unwrap();
 
-        // Verify the event was published. In soroban-sdk testutils the published events are
-        // accessible via env.events().all() (available under cfg(test) / testutils feature).
-        // We don't inspect the event payload in detail here — the emit call at the tree level
-        // uses Symbol("occulta") / Symbol("leaf_insert") per events.rs; the important
-        // invariant is that the call doesn't panic and the tree state is updated correctly.
-        // Event payload inspection would require matching on soroban_sdk::Val types which adds
-        // test boilerplate without additional correctness signal here.
-        //
-        // The occulta-sdk indexer integration test (outside this repo) is the real check.
-        // This test just proves insert() runs to completion (no panic) and returns index 0.
-        // (An event that panics would prevent reaching the assertion below.)
-        let root = Tree::current_root(&env, &cfg);
-        assert_ne!(root, U256::from_u32(&env, 0), "root after insert must be non-zero");
+            // Verify the event was published. In soroban-sdk testutils the published events are
+            // accessible via env.events().all() (available under cfg(test) / testutils feature).
+            // We don't inspect the event payload in detail here — the emit call at the tree level
+            // uses Symbol("occulta") / Symbol("leaf_insert") per events.rs; the important
+            // invariant is that the call doesn't panic and the tree state is updated correctly.
+            // Event payload inspection would require matching on soroban_sdk::Val types which adds
+            // test boilerplate without additional correctness signal here.
+            //
+            // The occulta-sdk indexer integration test (outside this repo) is the real check.
+            // This test just proves insert() runs to completion (no panic) and returns index 0.
+            // (An event that panics would prevent reaching the assertion below.)
+            let root = Tree::current_root(&env, &cfg);
+            assert_ne!(
+                root,
+                U256::from_u32(&env, 0),
+                "root after insert must be non-zero"
+            );
+        });
     }
 }

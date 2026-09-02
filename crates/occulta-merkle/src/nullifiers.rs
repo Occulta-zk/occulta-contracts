@@ -75,7 +75,18 @@ impl Nullifiers {
 mod tests {
     extern crate std;
     use super::*;
-    use soroban_sdk::{Bytes, Env};
+    use soroban_sdk::{contract, Env};
+
+    /// Storage only works inside a registered contract's context; this bare marker
+    /// contract exists solely so tests can enter that context via `env.as_contract()`.
+    #[contract]
+    struct TestContract;
+
+    fn setup() -> (Env, soroban_sdk::Address) {
+        let env = Env::default();
+        let contract_id = env.register(TestContract, ());
+        (env, contract_id)
+    }
 
     fn nullifier(env: &Env, seed: u8) -> BytesN<32> {
         let mut arr = [0u8; 32];
@@ -83,16 +94,9 @@ mod tests {
         BytesN::from_array(env, &arr)
     }
 
-    /// Register a minimal contract with the test env so storage() works.
-    fn setup_env() -> (Env, soroban_sdk::Address) {
-        let env = Env::default();
-        let contract_id = env.register((), ());
-        (env, contract_id)
-    }
-
     #[test]
     fn fresh_nullifier_is_not_spent() {
-        let (env, contract_id) = setup_env();
+        let (env, contract_id) = setup();
         env.as_contract(&contract_id, || {
             let n = nullifier(&env, 1);
             assert!(!Nullifiers::is_spent(&env, &n));
@@ -101,7 +105,7 @@ mod tests {
 
     #[test]
     fn spent_nullifier_is_spent() {
-        let (env, contract_id) = setup_env();
+        let (env, contract_id) = setup();
         env.as_contract(&contract_id, || {
             let n = nullifier(&env, 2);
             Nullifiers::spend(&env, &n);
@@ -112,7 +116,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn double_spend_panics() {
-        let (env, contract_id) = setup_env();
+        let (env, contract_id) = setup();
         env.as_contract(&contract_id, || {
             let n = nullifier(&env, 3);
             Nullifiers::spend(&env, &n);
@@ -122,7 +126,7 @@ mod tests {
 
     #[test]
     fn different_nullifiers_are_independent() {
-        let (env, contract_id) = setup_env();
+        let (env, contract_id) = setup();
         env.as_contract(&contract_id, || {
             let a = nullifier(&env, 10);
             let b = nullifier(&env, 20);
@@ -135,7 +139,7 @@ mod tests {
     #[test]
     fn spending_uses_persistent_storage() {
         // Verify the entry is in persistent storage (not temporary).
-        let (env, contract_id) = setup_env();
+        let (env, contract_id) = setup();
         env.as_contract(&contract_id, || {
             let n = nullifier(&env, 42);
             Nullifiers::spend(&env, &n);

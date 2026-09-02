@@ -18,7 +18,7 @@
 //! G2 subgroup membership during `pairing_check`. Per `docs/PLATFORM.md`: for BN254 the host
 //! traps on an off-curve G1/G2 point — subgroup membership checks are not separately needed.
 
-use occulta_types::{is_zero_bytes, VerificationKey, Proof};
+use occulta_types::{is_zero_bytes, Proof, VerificationKey};
 use soroban_sdk::{Bytes, BytesN, Env, Vec, U256};
 
 use crate::VerifierError;
@@ -28,10 +28,8 @@ use crate::VerifierError;
 /// p = 21888242871839275222246405745257275088696311157297823662689037894645226208583
 /// Source: EIP-197 and ark-bn254.
 const BN254_FP_MODULUS_BE: [u8; 32] = [
-    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29,
-    0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
-    0x97, 0x81, 0x6a, 0x91, 0x68, 0x71, 0xca, 0x8d,
-    0x3c, 0x20, 0x8c, 0x16, 0xd8, 0x7c, 0xfd, 0x47,
+    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
+    0x97, 0x81, 0x6a, 0x91, 0x68, 0x71, 0xca, 0x8d, 0x3c, 0x20, 0x8c, 0x16, 0xd8, 0x7c, 0xfd, 0x47,
 ];
 
 /// Negate a BN254 G1 affine point: `(x, y) → (x, p - y)`.
@@ -124,10 +122,8 @@ pub fn verify(
     // BN254 G1 cofactor is 1 — every on-curve point is in the group. The host traps on
     // off-curve bytes. No explicit is_in_subgroup call needed (and none exists in the SDK
     // for BN254 per docs/PLATFORM.md). We rely on the host trap for A, B, C.
-    let proof_b: Bn254G2Affine =
-        Bn254G2Affine::from_bytes(bytes_to_fixed::<128>(env, &proof.b)?);
-    let proof_c: Bn254G1Affine =
-        Bn254G1Affine::from_bytes(bytes_to_fixed::<64>(env, &proof.c)?);
+    let proof_b: Bn254G2Affine = Bn254G2Affine::from_bytes(bytes_to_fixed::<128>(env, &proof.b)?);
+    let proof_c: Bn254G1Affine = Bn254G1Affine::from_bytes(bytes_to_fixed::<64>(env, &proof.c)?);
 
     // Build vk_x.
     let vk_x = compute_vk_x_bn254(env, vk, public_signals)?;
@@ -164,16 +160,13 @@ pub fn verify(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn bytes_to_fixed<const N: usize>(
-    env: &Env,
-    b: &Bytes,
-) -> Result<BytesN<N>, VerifierError> {
+fn bytes_to_fixed<const N: usize>(env: &Env, b: &Bytes) -> Result<BytesN<N>, VerifierError> {
     if b.len() as usize != N {
         return Err(VerifierError::MalformedVerificationKey);
     }
     let mut arr = [0u8; N];
-    for i in 0..N {
-        arr[i] = b.get_unchecked(i as u32);
+    for (i, byte) in arr.iter_mut().enumerate() {
+        *byte = b.get_unchecked(i as u32);
     }
     Ok(BytesN::from_array(env, &arr))
 }
@@ -181,8 +174,8 @@ fn bytes_to_fixed<const N: usize>(
 fn u256_to_bytes32(env: &Env, v: &U256) -> BytesN<32> {
     let be = v.to_be_bytes();
     let mut arr = [0u8; 32];
-    for i in 0..32u32 {
-        arr[i as usize] = be.get_unchecked(i);
+    for (i, byte) in arr.iter_mut().enumerate() {
+        *byte = be.get_unchecked(i as u32);
     }
     BytesN::from_array(env, &arr)
 }
