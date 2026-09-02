@@ -55,9 +55,17 @@ jobs:
           targets: wasm32-unknown-unknown
       - name: Install Stellar CLI
         # Pinned exact (not a `^23` range): an open range re-resolves on every run, so a new
-        # patch release or a yanked transitive dependency can break `--locked` with no change
-        # in this repo. Bump deliberately when needed.
-        run: cargo install --locked stellar-cli --version 23.4.1
+        # patch release could change which CLI we get with no change in this repo. Bump
+        # deliberately when needed.
+        #
+        # Not `--locked`: stellar-cli 23.4.1's shipped Cargo.lock pins ethnum 1.5.2, which
+        # `unsafe { mem::transmute(()) }`s into `TryFromIntError` (source/target size
+        # mismatch: 0 bits vs 8 bits) - this only became a hard E0512 error, not just UB,
+        # once rustc's TryFromIntError layout changed, so `--locked` deterministically fails
+        # to compile against current stable regardless of which CI runner's Rust it hits.
+        # ethnum 1.5.3 fixes it; letting cargo re-resolve the transitive graph (while still
+        # pinning the stellar-cli version itself) picks that up.
+        run: cargo install stellar-cli --version 23.4.1
       - name: Build every deployable contract
         run: |
           for dir in contracts/*/ apps/*/; do

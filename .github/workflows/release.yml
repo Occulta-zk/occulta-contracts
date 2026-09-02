@@ -14,8 +14,9 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - name: Install Stellar CLI
-        # Keep in sync with ci.yml's pin — see the comment there for why it's exact, not a range.
-        run: cargo install --locked stellar-cli --version 23.4.1
+        # Keep in sync with ci.yml's pin — see the comment there for why it's exact, not a
+        # range, and why it isn't `--locked`.
+        run: cargo install stellar-cli --version 23.4.1
       - name: Build every deployable contract (release profile)
         run: |
           mkdir -p dist
