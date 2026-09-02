@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/occulta-types",
+    "crates/occulta-poseidon",
+    "crates/occulta-verifier",
+    "crates/occulta-merkle",
+    "contracts/registry",
+    "contracts/shielded-pool",
+    "apps/private-vote",
+    "apps/attestation",
+    "apps/shieldroll",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/occulta-zk/occulta-contracts"
+publish = false
+
+[workspace.dependencies]
+# Pinned per docs/PLATFORM.md — do not bump without re-verifying the crypto module
+# bindings against the new version's actual source (method names have already
+# changed once between CAP-level and SDK-level naming).
+soroban-sdk = { version = "=26.1.1", features = ["hazmat-crypto"] }
+occulta-types = { path = "crates/occulta-types" }
+occulta-poseidon = { path = "crates/occulta-poseidon" }
+occulta-verifier = { path = "crates/occulta-verifier" }
+occulta-merkle = { path = "crates/occulta-merkle" }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

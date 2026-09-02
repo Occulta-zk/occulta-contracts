@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: cargo test (workspace, incl. differential fixtures)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Fixture-backed differential tests are ordinary `#[test]`s that read committed files
+      # under fixtures/ — no network access needed, no snarkjs/circom invoked at test time.
+      - run: cargo test --workspace
+
+  contracts:
+    name: stellar contract build + wasm size report
+    runs-on: ubuntu-latest
+    # Placeholder: real contract logic doesn't exist yet (see docs/PLATFORM.md milestones),
+    # so there is nothing meaningful for `stellar contract build` to produce yet. This job is
+    # wired up so the step exists and is exercised once contracts/* stop being stubs — do not
+    # delete it as "unused", fill it in as each contract crate gets real #[contractimpl] code.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --version ^23
+      - name: Build every deployable contract
+        run: |
+          for dir in contracts/*/ apps/*/; do
+            if [ -f "$dir/Cargo.toml" ]; then
+              echo "::group::stellar contract build: $dir"
+              (cd "$dir" && stellar contract build) || echo "SKIP (not yet a real contract): $dir"
+              echo "::endgroup::"
+            fi
+          done
+      - name: Wasm size report
+        run: |
+          echo "### Wasm size report" >> "$GITHUB_STEP_SUMMARY"
+          find . -path '*/target/wasm32-unknown-unknown/release/*.wasm' -exec ls -la {} \; >> "$GITHUB_STEP_SUMMARY" || true
+
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install --locked cargo-audit
+      - run: cargo audit

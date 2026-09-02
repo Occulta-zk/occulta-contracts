@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-wasm:
+    name: Build optimized wasm + attach to release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --version ^23
+      - name: Build every deployable contract (release profile)
+        run: |
+          mkdir -p dist
+          for dir in contracts/*/ apps/*/; do
+            if [ -f "$dir/Cargo.toml" ]; then
+              name=$(basename "$dir")
+              (cd "$dir" && stellar contract build) && \
+                cp target/wasm32-unknown-unknown/release/*.wasm "dist/${name}.wasm" || \
+                echo "SKIP (not yet a real contract): $dir"
+            fi
+          done
+      - name: sha256sums
+        run: (cd dist && sha256sum *.wasm > SHA256SUMS) || true
+      - name: Attach artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.wasm
+            dist/SHA256SUMS

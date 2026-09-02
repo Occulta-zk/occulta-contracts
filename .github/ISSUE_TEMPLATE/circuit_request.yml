@@ -1,0 +1,29 @@
+name: Circuit / reference app request
+description: Propose a new reference application or a circuit it needs.
+labels: [circuit]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+    validations:
+      required: true
+  - type: textarea
+    id: public-signals
+    attributes:
+      label: Proposed public signals, in order
+      description: Build spec §5 requires every public signal be documented in declaration order (outputs first, then public inputs). List them here even in draft form.
+    validations:
+      required: true
+  - type: textarea
+    id: external-nullifier
+    attributes:
+      label: External nullifier / domain separator
+      description: Security Invariant #6 — how is this circuit's nullifier scoped so it doesn't collide with other apps'?
+  - type: textarea
+    id: bound-signals
+    attributes:
+      label: What's bound into the proof
+      description: Security Invariant #1 — every value the transaction acts on (recipient, amount, choice, fee, relayer, ...) must be a public signal in the proof, or it's replayable.
+    validations:
+      required: true

@@ -1,0 +1,25 @@
+name: Feature request
+description: Propose something new.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read `README.md`'s non-goals and `CONTRIBUTING.md`'s "never do these" before filing — this project deliberately keeps its surface area small. "No new cryptography" is a hard constraint, not a preference.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints acknowledgement
+      options:
+        - label: This does not require novel cryptography (established constructions only).
+        - label: This has a clear differential-test story if it touches a cryptographic primitive.
