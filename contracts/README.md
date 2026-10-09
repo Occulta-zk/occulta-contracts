@@ -1,8 +1,8 @@
 # Deployable contracts
 
 - `registry/` — verification-key registry: `register` / `freeze` / `get_vk` / `verify` /
-  `set_admin`. One deployed instance is meant to serve every app on the network. Not yet
-  implemented (milestone M5) — see `registry/src/lib.rs`.
+  `set_admin` / `extend_ttl`. Implemented and tested, including `verify` against the real
+  snarkjs fixture in `fixtures/vote/`. See `registry/src/lib.rs` for the trust model.
 - `shielded-pool/` — reusable deposit/withdraw pool composing `occulta-merkle` +
   `registry`, holding SEP-41 tokens. Not yet implemented (milestone M5+) — see
   `shielded-pool/src/lib.rs`.

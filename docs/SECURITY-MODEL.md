@@ -65,7 +65,7 @@ before merge — a code comment alone is not sufficient.
 | 4 | `occulta-merkle::Tree::is_known_root` — ring buffer scan over last `root_history_size` roots | `root_history_keeps_last_n_roots` |
 | 5 | `occulta-verifier::verify` — returns `Err(PublicSignalCountMismatch)` before any crypto | `public_signal_count_mismatch_is_an_error`, `zero_signals_*`, `too_many_signals_*` |
 | 6 | Each app contract includes a domain-separator public signal | Per-app tests |
-| 7 | `contracts/registry::freeze` — one-way flag, checked on every `register`/`set_admin` call | `freeze_is_one_way`, `frozen_circuit_cannot_be_updated` |
+| 7 | `contracts/registry::freeze` — one-way flag, checked on every `register` call | `frozen_circuit_rejects_register_even_from_admin`, `frozen_circuit_stays_frozen_after_admin_change`, `freeze_twice_is_rejected` |
 | 8 | `occulta_types::scalar_in_range` (called in poseidon sponge + verifier) | `scalar_equal_to_modulus_is_rejected` (×6), `out_of_range_bn254_signal_is_rejected`, `out_of_range_bls12_signal_is_rejected` |
 | 9 | Every `panic!` / double-spend path | `double_spend_panics`, `hash_n_rejects_zero_inputs`, `hash_n_rejects_unsupported_arity`, `hash2_rejects_out_of_range_scalar` |
 

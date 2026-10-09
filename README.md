@@ -10,7 +10,7 @@
 | `occulta-types` — encoding, shared types, snarkjs JSON conversion | Implemented · 27 tests |
 | `occulta-merkle` — tree, roots, nullifiers | Implemented · 15 tests |
 | `occulta-verifier` — Groth16 BLS12-381 / BN254 | Implemented · 18 tests · BN254 verifies a real circom/snarkjs proof (`fixtures/vote/`); BLS12-381 has structural tests only |
-| `contracts/registry` | Scaffold — not implemented |
+| `contracts/registry` — VK registry with freeze | Implemented · 25 tests · verifies the snarkjs fixture · not deployed |
 | `contracts/shielded-pool` | Scaffold — not implemented |
 | `apps/private-vote` · `attestation` · `shieldroll` | Scaffold — not implemented |
 
@@ -48,13 +48,29 @@ generated from circomlib (`scripts/poseidon-gen/`) and checked against circomlib
 An **incremental Merkle tree** with a root history buffer, so concurrent deposits do not make
 in-flight proofs stale, and a persistent **nullifier set**: a nullifier once spent stays spent.
 
+### Implemented: verification-key registry
+
+`contracts/registry` stores Groth16 VKs by circuit id (`Symbol`) so other contracts can call
+`verify(circuit_id, proof, public_signals)` instead of bundling a VK. The admin can register
+or replace a circuit's VK until the circuit is frozen. `freeze` is one-way: after it, the
+VK cannot change, even at the admin's request. While a circuit is unfrozen, whoever holds
+the admin key can swap in a VK that accepts forged proofs, so rely only on frozen circuits
+(`is_frozen`). `verify` is read-only. Storage is `persistent()`, and anyone can call
+`extend_ttl`.
+
+| Function | Auth | Notes |
+| --- | --- | --- |
+| `__constructor(admin)` | — | sets the admin |
+| `register(circuit_id, vk)` | admin | fails with `CircuitFrozen` once frozen |
+| `freeze(circuit_id)` | admin | one-way |
+| `set_admin(new_admin)` | admin | |
+| `get_vk(circuit_id)` / `is_frozen(circuit_id)` / `admin()` | — | reads |
+| `verify(circuit_id, proof, public_signals)` | — | `Ok(true)` / `Ok(false)` / error; off-curve points abort the call |
+| `extend_ttl(circuit_id)` | — | renews storage TTL |
+
 ### Planned (not implemented)
 
 The following are design intent only. Their directories are scaffolds.
-
-- **Verification-key registry** (`contracts/registry`) — a shared contract where a circuit's
-  VK is registered once and other contracts call `verify()` against it. VKs will be
-  freezable: once frozen, the admin will no longer be able to replace them.
 - **Shielded pool** (`contracts/shielded-pool`) — a SEP-41 deposit/withdraw pool that will
   enforce root check → nullifier check → proof verify → nullifier spent → transfer, in that
   order.
@@ -77,7 +93,7 @@ flowchart LR
     poseidon["occulta-poseidon\nPoseidon · CAP-75"]
     verifier["occulta-verifier\nGroth16 · BLS12-381 · BN254"]
     merkle["occulta-merkle\nMerkle tree · nullifiers"]
-    registry["contracts/registry\nVK registry · verify()\n(planned)"]
+    registry["contracts/registry\nVK registry · freeze · verify()"]
     pool["contracts/shielded-pool\nSEP-41 deposit · withdraw\n(planned)"]
     apps["apps/\nprivate-vote · attestation · shieldroll\n(planned)"]
 
@@ -94,7 +110,7 @@ flowchart LR
     pool --> apps
 
     classDef scaffold stroke-dasharray: 5 5,stroke:#888,color:#888;
-    class registry,pool,apps scaffold;
+    class pool,apps scaffold;
 ```
 
 ---

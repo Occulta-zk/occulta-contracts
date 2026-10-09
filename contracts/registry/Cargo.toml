@@ -7,11 +7,14 @@ repository.workspace = true
 publish.workspace = true
 
 [lib]
-crate-type = ["rlib"]  # cdylib comes back once real #[contractimpl] code lands (no_std cdylib needs a panic_handler this stub doesn't provide on native targets)
+crate-type = ["cdylib", "rlib"]
 doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
 occulta-types = { workspace = true }
 occulta-verifier = { workspace = true }
-occulta-merkle = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+occulta-types = { workspace = true, features = ["snarkjs"] }

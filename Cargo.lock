@@ -1175,7 +1175,6 @@ dependencies = [
 name = "occulta-contract-registry"
 version = "0.1.0"
 dependencies = [
- "occulta-merkle",
  "occulta-types",
  "occulta-verifier",
  "soroban-sdk",
