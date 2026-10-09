@@ -15,6 +15,9 @@ mod error;
 mod proof;
 mod vk;
 
+#[cfg(any(test, feature = "snarkjs"))]
+pub mod snarkjs;
+
 pub use curve::Curve;
 pub use encoding::{is_zero_bytes, scalar_in_range, swap_fp2_limbs};
 pub use error::TypesError;

@@ -11,8 +11,14 @@ publish.workspace = true
 crate-type = ["rlib"]
 doctest = false
 
+[features]
+# snarkjs JSON -> VerificationKey / Proof conversion. Needs std; never enable in a contract.
+snarkjs = ["dep:serde_json"]
+
 [dependencies]
 soroban-sdk = { workspace = true }
+serde_json = { version = "1", optional = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+serde_json = "1"
