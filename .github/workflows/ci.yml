@@ -40,6 +40,14 @@ jobs:
       # Fixture-backed differential tests are ordinary `#[test]`s that read committed files
       # under fixtures/ — no network access needed, no snarkjs/circom invoked at test time.
       - run: cargo test --workspace
+      # The one test that shows a real snarkjs proof verifies on-chain. Run it by exact name
+      # and require that exactly one test ran, so deleting or renaming it fails CI instead of
+      # silently filtering to zero tests.
+      - name: snarkjs fixture verifies (must exist and pass)
+        run: |
+          out=$(cargo test -p occulta-verifier --lib -- --exact tests::fixture::fixture_proof_verifies 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "test result: ok. 1 passed"
 
   contracts:
     name: stellar contract build + wasm size report
