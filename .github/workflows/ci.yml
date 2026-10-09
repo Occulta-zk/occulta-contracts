@@ -52,15 +52,13 @@ jobs:
   contracts:
     name: stellar contract build + wasm size report
     runs-on: ubuntu-latest
-    # Placeholder: real contract logic doesn't exist yet (see docs/PLATFORM.md milestones),
-    # so there is nothing meaningful for `stellar contract build` to produce yet. This job is
-    # wired up so the step exists and is exercised once contracts/* stop being stubs — do not
-    # delete it as "unused", fill it in as each contract crate gets real #[contractimpl] code.
+    # contracts/registry is a real contract and must build. The remaining crates are still
+    # scaffolds (see README status table) and are skipped until they get #[contractimpl] code.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32v1-none
       - name: Install Stellar CLI
         # Pinned exact (not a `^23` range): an open range re-resolves on every run, so a new
         # patch release could change which CLI we get with no change in this repo. Bump
@@ -74,9 +72,11 @@ jobs:
         # ethnum 1.5.3 fixes it; letting cargo re-resolve the transitive graph (while still
         # pinning the stellar-cli version itself) picks that up.
         run: cargo install stellar-cli --version 23.4.1
-      - name: Build every deployable contract
+      - name: Build contracts/registry (must succeed)
+        run: stellar contract build --package occulta-contract-registry
+      - name: Build remaining contract crates (scaffolds may skip)
         run: |
-          for dir in contracts/*/ apps/*/; do
+          for dir in contracts/shielded-pool/ apps/*/; do
             if [ -f "$dir/Cargo.toml" ]; then
               echo "::group::stellar contract build: $dir"
               (cd "$dir" && stellar contract build) || echo "SKIP (not yet a real contract): $dir"
@@ -86,7 +86,7 @@ jobs:
       - name: Wasm size report
         run: |
           echo "### Wasm size report" >> "$GITHUB_STEP_SUMMARY"
-          find . -path '*/target/wasm32-unknown-unknown/release/*.wasm' -exec ls -la {} \; >> "$GITHUB_STEP_SUMMARY" || true
+          find . -path '*/target/wasm32v1-none/release/*.wasm' -exec ls -la {} \; >> "$GITHUB_STEP_SUMMARY" || true
 
   audit:
     name: cargo audit
