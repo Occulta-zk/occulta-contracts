@@ -2,9 +2,26 @@
 
 > ⚠️ **Testnet only. Unaudited. Not for real assets.**
 
+## Status
+
+| Component | State |
+| --- | --- |
+| `occulta-poseidon` — Poseidon over CAP-75 | Implemented · 16 tests · circomlib fixtures |
+| `occulta-types` — encoding, shared types | Implemented · 21 tests |
+| `occulta-merkle` — tree, roots, nullifiers | Implemented · 15 tests |
+| `occulta-verifier` — Groth16 BLS12-381 / BN254 | Implemented · 10 tests, all negative-path (no real-proof fixture yet) |
+| `contracts/registry` | Scaffold — not implemented |
+| `contracts/shielded-pool` | Scaffold — not implemented |
+| `apps/private-vote` · `attestation` · `shieldroll` | Scaffold — not implemented |
+
+"Scaffold" means the directory contains a placeholder crate of about ten lines and no tests.
+Nothing in this repository is deployed.
+
+---
+
 Occulta is a zero-knowledge toolkit for Stellar smart contracts. This repository is the
-on-chain layer — a set of reusable, composable building blocks so any Soroban developer can
-add ZK features to a contract without writing pairing math or porting Poseidon by hand.
+on-chain layer: reusable building blocks so a Soroban developer can add ZK features to a
+contract without writing pairing math or porting Poseidon by hand.
 
 ---
 
@@ -12,69 +29,56 @@ add ZK features to a contract without writing pairing math or porting Poseidon b
 
 **Prove things on-chain without revealing the underlying data.**
 
-A user generates a proof off-chain (using `occulta-sdk`) that they know something — a
-secret note, a credential, a salary — then submits that proof to a Soroban contract. The
-contract verifies the proof on-chain and acts on it: releasing tokens, recording a vote,
-issuing an attestation. The underlying secret never touches the chain.
+A user generates a proof off-chain that they know something — a secret note, a credential,
+a salary — then submits that proof to a Soroban contract. The contract verifies the proof
+on-chain and acts on it. The underlying secret never touches the chain.
 
-This repo provides three layers that make that possible:
-
-### Cryptographic primitives
+### Implemented: cryptographic primitives
 
 **Groth16 proof verification** over BLS12-381 and BN254, using Stellar's native pairing host
-functions (CAP-59 / CAP-74). Submit a proof, get a boolean back. One pairing check per
-transaction, no math in your contract.
+functions (CAP-59 / CAP-74). One `pairing_check` call per verification, `vk_x` computed with
+`g1_msm`. See the status table for what the test suite does and does not yet demonstrate.
 
 **Poseidon hashing** built on CAP-75's native permutation host function, with parameters
-sourced directly from circomlib. The same hash your circuit uses, available on-chain, so
-Merkle paths computed off-chain verify correctly on-chain.
+generated from circomlib (`scripts/poseidon-gen/`) and checked against circomlibjs output.
 
-### Shielded state
+### Implemented: shielded-state primitives
 
-An **incremental Merkle tree** with a root history buffer, so deposits and withdrawals can
-happen concurrently without proofs going stale. A persistent **nullifier registry** that
-makes double-spending impossible — a nullifier once spent stays spent, forever.
+An **incremental Merkle tree** with a root history buffer, so concurrent deposits do not make
+in-flight proofs stale, and a persistent **nullifier set**: a nullifier once spent stays spent.
 
-### Deployable contracts
+### Planned (not implemented)
 
-A **verification-key registry** that any app on the network can share. Register your
-circuit's VK once; every contract that needs it calls `verify()` against the registry
-instead of bundling its own verifier. VKs can be frozen — once frozen, no admin can change
-them, which is what trustlessness actually requires.
+The following are design intent only. Their directories are scaffolds.
 
-A **shielded pool** for SEP-41 tokens: deposit with a commitment, withdraw with a proof.
-The pool enforces the correct ordering — root check, nullifier check, proof verify, nullifier
-spent, then transfer — so reentrancy and double-spend are structurally impossible.
-
-### Reference applications
-
-- **private-vote** — anonymous, one-vote-per-member polling. Members prove membership
-  without revealing who they are. Each poll is domain-separated so a vote in one poll can't
-  be replayed in another.
-
-- **attestation** — reusable KYC credentials. An anchor issues a credential commitment;
-  the holder later proves they hold a valid credential satisfying some predicate, without
-  revealing which credential or which issuer.
-
-- **shieldroll** — confidential payroll. An employer deposits a total; employees each
-  withdraw their own amount. The circuit proves the parts sum to the whole without revealing
-  any individual salary.
+- **Verification-key registry** (`contracts/registry`) — a shared contract where a circuit's
+  VK is registered once and other contracts call `verify()` against it. VKs will be
+  freezable: once frozen, the admin will no longer be able to replace them.
+- **Shielded pool** (`contracts/shielded-pool`) — a SEP-41 deposit/withdraw pool that will
+  enforce root check → nullifier check → proof verify → nullifier spent → transfer, in that
+  order.
+- **private-vote** — anonymous one-vote-per-member polling, domain-separated per poll.
+- **attestation** — reusable credentials proved against a predicate without revealing the
+  credential or issuer.
+- **shieldroll** — confidential payroll where the circuit proves the parts sum to the whole.
 
 ---
 
 ## Architecture
 
+Solid nodes are implemented crates. Dashed nodes are scaffolds (planned, not implemented).
+
 ```mermaid
 flowchart LR
-    circuit["circom circuit\n(off-chain, occulta-sdk)"]
+    circuit["circom circuit\n(off-chain)"]
     snarkjs["proof + public signals"]
     types["occulta-types\nshared types · encoding"]
     poseidon["occulta-poseidon\nPoseidon · CAP-75"]
     verifier["occulta-verifier\nGroth16 · BLS12-381 · BN254"]
     merkle["occulta-merkle\nMerkle tree · nullifiers"]
-    registry["contracts/registry\nVK registry · verify()"]
-    pool["contracts/shielded-pool\nSEP-41 deposit · withdraw"]
-    apps["apps/\nprivate-vote · attestation · shieldroll"]
+    registry["contracts/registry\nVK registry · verify()\n(planned)"]
+    pool["contracts/shielded-pool\nSEP-41 deposit · withdraw\n(planned)"]
+    apps["apps/\nprivate-vote · attestation · shieldroll\n(planned)"]
 
     circuit --> snarkjs
     snarkjs --> apps
@@ -87,6 +91,9 @@ flowchart LR
     registry --> pool
     registry --> apps
     pool --> apps
+
+    classDef scaffold stroke-dasharray: 5 5,stroke:#888,color:#888;
+    class registry,pool,apps scaffold;
 ```
 
 ---
@@ -105,10 +112,7 @@ Bindings verified against `soroban-sdk = "26.1.1"` — see `docs/PLATFORM.md`.
 
 ## Deployed testnet contracts
 
-| Contract | Network | Contract ID |
-| --- | --- | --- |
-| `occulta-contract-registry` | Testnet | — |
-| `occulta-contract-shielded-pool` | Testnet | — |
+None. No contract in this repository is deployed yet.
 
 ---
 
