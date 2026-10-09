@@ -32,3 +32,6 @@ secrets.*
 # soroban-sdk test debug snapshots, auto-written on `cargo test` failures/panics
 test_snapshots/
 **/test_snapshots/
+
+# Circuit build output (r1cs, wasm, zkeys, ptau); fixtures/ holds the committed artefacts
+circuits/build/
