@@ -12,6 +12,13 @@ a **lower bound**: on-chain costs in a deployed Wasm contract will be higher.
 | Operation | Measured instructions | 10% regression threshold |
 | --- | --- | --- |
 | `occulta-poseidon::Poseidon::hash2` — BN254, t=3 | **1,750,923** | 1,930,000 |
+| `occulta-verifier::verify` — Groth16 BN254, 4 public signals | **27,117,819** | 29,830,000 |
+
+`verify` is measured on the real snarkjs fixture in `fixtures/vote/` by test
+`fixture_verify_budget` (`crates/occulta-verifier/src/tests.rs`), which fails if the cost
+passes the threshold. The budget is reset after the inputs are loaded, so the figure covers
+`verify()` alone: the range checks, one `g1_msm` over 4 points, one `g1_add`, and one
+4-pair `pairing_check`.
 
 ---
 

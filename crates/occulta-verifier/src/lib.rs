@@ -10,21 +10,20 @@
 //! `g1_mul` — the cost difference is significant). All four pairs are assembled into a single
 //! `pairing_check` call, per the advice in `docs/PLATFORM.md`.
 //!
-//! ## No fixtures caveat
+//! ## Test coverage
 //!
-//! A real `circom`/`snarkjs`-produced proof fixture does not exist in `fixtures/vote/` yet
-//! (`circom` was not available in this environment). The implementation is built from the
-//! specification and verified SDK bindings; every non-trivial path is exercised with synthetic
-//! tests using `soroban-sdk`'s testutils `Env`. The first thing a new contributor should do is
-//! run `scripts/gen-fixtures.sh` (needs `circom` + `snarkjs`) and replace those tests with
-//! ones backed by real snarkjs artefacts.
+//! BN254 is tested against a real circom/snarkjs proof (`fixtures/vote/`): it verifies as
+//! `Ok(true)`, and tampered signals, a wrong proof, and the wrong G2 limb order are each
+//! rejected — see `tests.rs`. The BLS12-381 path has structural tests only; there is no
+//! BLS12-381 proof fixture yet.
 //!
 //! ## Encoding
 //!
 //! All point encoding follows `docs/ENCODING.md` and the verified bindings in
-//! `docs/PLATFORM.md`. The most important: G2 coordinate order is **c1 before c0** in both
-//! BLS12-381 and BN254 (opposite to snarkjs JSON order) — `occulta_types::swap_fp2_limbs`
-//! must be applied before constructing a `VerificationKey` or `Proof` from snarkjs output.
+//! `docs/PLATFORM.md`. The most important: G2 coordinate order is **c1 before c0** (opposite
+//! to snarkjs JSON order). For BN254 this is confirmed against a real snarkjs proof; for
+//! BLS12-381 it rests on the SDK documentation. `occulta_types::snarkjs` (feature `snarkjs`)
+//! applies the swap when converting snarkjs output.
 #![no_std]
 
 mod error;

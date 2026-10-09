@@ -7,9 +7,9 @@
 | Component | State |
 | --- | --- |
 | `occulta-poseidon` — Poseidon over CAP-75 | Implemented · 16 tests · circomlib fixtures |
-| `occulta-types` — encoding, shared types | Implemented · 21 tests |
+| `occulta-types` — encoding, shared types, snarkjs JSON conversion | Implemented · 27 tests |
 | `occulta-merkle` — tree, roots, nullifiers | Implemented · 15 tests |
-| `occulta-verifier` — Groth16 BLS12-381 / BN254 | Implemented · 10 tests, all negative-path (no real-proof fixture yet) |
+| `occulta-verifier` — Groth16 BLS12-381 / BN254 | Implemented · 18 tests · BN254 verifies a real circom/snarkjs proof (`fixtures/vote/`); BLS12-381 has structural tests only |
 | `contracts/registry` | Scaffold — not implemented |
 | `contracts/shielded-pool` | Scaffold — not implemented |
 | `apps/private-vote` · `attestation` · `shieldroll` | Scaffold — not implemented |
@@ -37,7 +37,8 @@ on-chain and acts on it. The underlying secret never touches the chain.
 
 **Groth16 proof verification** over BLS12-381 and BN254, using Stellar's native pairing host
 functions (CAP-59 / CAP-74). One `pairing_check` call per verification, `vk_x` computed with
-`g1_msm`. See the status table for what the test suite does and does not yet demonstrate.
+`g1_msm`. On BN254, a real circom/snarkjs proof verifies on the Soroban host for about 27M
+CPU instructions (`docs/BUDGET.md`). No BLS12-381 proof fixture exists yet.
 
 **Poseidon hashing** built on CAP-75's native permutation host function, with parameters
 generated from circomlib (`scripts/poseidon-gen/`) and checked against circomlibjs output.

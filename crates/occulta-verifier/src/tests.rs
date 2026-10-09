@@ -1,19 +1,16 @@
 //! Tests for `occulta-verifier`.
 //!
-//! ## Fixture situation
+//! Two groups:
 //!
-//! A real `circom`/`snarkjs`-produced proof does not exist in `fixtures/vote/` yet — `circom`
-//! was not available in this build environment. All tests here use *synthetic* (handcrafted)
-//! data that exercises the verifier's structural / error-path logic through the real
-//! `soroban-sdk` testutils `Env` (not a mock), backed by the real `soroban-env-host`. This
-//! covers every `Err` variant and every length/count check.
+//! - **snarkjs fixture tests** (`fixture::*`): a real Groth16 proof over BN254, produced by
+//!   circom 2.2.3 + snarkjs 0.7.5 from `circuits/private_vote.circom` and accepted by
+//!   `snarkjs groth16 verify` before it was committed (see `fixtures/README.md` and
+//!   `scripts/gen-fixtures.sh`). These are the only tests that exercise the `Ok(true)` path,
+//!   and the only ones that would catch a `verify()` that always returns `Ok(false)`.
+//! - **structural tests**: synthetic all-zero inputs that exercise every `Err` path before
+//!   any host crypto is reached.
 //!
-//! The pairing-check `Ok(true)` / `Ok(false)` paths cannot be meaningfully tested without a
-//! real proof and matching VK. Once `scripts/gen-fixtures.sh` is runnable (needs `circom` +
-//! `snarkjs`), replace the `TODO_real_fixture_*` placeholders below with real data from
-//! `fixtures/vote/vkey.json`, `proof.json`, and `public.json`.
-//!
-//! See the module-level doc in `lib.rs` for the open-item flag.
+//! All tests run against the real `soroban-env-host` via the testutils `Env`, not a mock.
 
 extern crate std;
 
@@ -249,28 +246,142 @@ fn empty_ic_vk_is_rejected() {
 }
 
 // ---------------------------------------------------------------------------
-// TODO: real fixture tests — unblock by running `scripts/gen-fixtures.sh`
+// snarkjs fixture tests — fixtures/vote/, BN254, public signals [root, nullifier, choice, poll_id]
 // ---------------------------------------------------------------------------
-//
-// Once `fixtures/vote/vkey.json`, `proof.json`, `public.json` exist:
-//
-// ```rust
-// #[test]
-// fn bn254_groth16_real_fixture_verifies() {
-//     let env = Env::default();
-//     let vk = load_vk_from_json(&env, include_str!("../../../fixtures/vote/vkey.json"));
-//     let proof = load_proof_from_json(&env, include_str!("../../../fixtures/vote/proof.json"));
-//     let signals = load_signals(&env, include_str!("../../../fixtures/vote/public.json"));
-//     assert_eq!(verify(&env, &vk, &proof, &signals), Ok(true));
-// }
-//
-// #[test]
-// fn bn254_groth16_bit_flipped_proof_fails() {
-//     // negative fixture: one bit flipped in proof.a's first byte
-//     let env = Env::default();
-//     let vk = load_vk_from_json(...);
-//     let mut proof = load_proof_from_json(...);
-//     // flip bit 0 of proof.a[0]
-//     assert_eq!(verify(&env, &vk, &proof, &signals), Ok(false));
-// }
-// ```
+
+mod fixture {
+    extern crate std;
+
+    use occulta_types::snarkjs::{proof_from_json, public_signals_from_json, vk_from_json};
+    use occulta_types::{swap_fp2_limbs, Proof, VerificationKey};
+    use soroban_sdk::crypto::bn254::Bn254G1Affine;
+    use soroban_sdk::{Bytes, BytesN, Env, Vec, U256};
+
+    use crate::verify;
+
+    const VKEY: &str = include_str!("../../../fixtures/vote/vkey.json");
+    const PROOF: &str = include_str!("../../../fixtures/vote/proof.json");
+    const PROOF_NEGATIVE: &str = include_str!("../../../fixtures/vote/proof_negative.json");
+    const PUBLIC: &str = include_str!("../../../fixtures/vote/public.json");
+
+    /// Recorded cost plus 10%. See `docs/BUDGET.md`.
+    const BN254_VERIFY_CPU_THRESHOLD: u64 = 29_830_000;
+
+    pub(super) fn load(env: &Env) -> (VerificationKey, Proof, Vec<U256>) {
+        (
+            vk_from_json(env, VKEY).unwrap(),
+            proof_from_json(env, PROOF).unwrap(),
+            public_signals_from_json(env, PUBLIC).unwrap(),
+        )
+    }
+
+    /// Re-applies the Fp2 limb swap to both coordinates of a BN254 G2 point, turning the
+    /// host order `c1 || c0` back into snarkjs's native `c0 || c1`.
+    fn to_snarkjs_g2_order(env: &Env, g2: &Bytes) -> Bytes {
+        let host: std::vec::Vec<u8> = g2.iter().collect();
+        let mut out = [0u8; 128];
+        swap_fp2_limbs(&host[..64], 32, &mut out[..64]);
+        swap_fp2_limbs(&host[64..], 32, &mut out[64..]);
+        Bytes::from_array(env, &out)
+    }
+
+    /// The point of the whole crate: a real snarkjs proof verifies on-chain.
+    #[test]
+    fn fixture_proof_verifies() {
+        let env = Env::default();
+        let (vk, proof, signals) = load(&env);
+        assert_eq!(signals.len(), 4);
+        assert_eq!(verify(&env, &vk, &proof, &signals), Ok(true));
+    }
+
+    /// Budget probe for `docs/BUDGET.md`: cost of `verify()` alone on the fixture (4 public
+    /// signals), measured the same way as the Poseidon numbers there. Fails if the cost
+    /// regresses more than 10% past the recorded figure.
+    #[test]
+    fn fixture_verify_budget() {
+        let env = Env::default();
+        let (vk, proof, signals) = load(&env);
+        env.cost_estimate().budget().reset_unlimited();
+        assert_eq!(verify(&env, &vk, &proof, &signals), Ok(true));
+        let cpu = env.cost_estimate().budget().cpu_instruction_cost();
+        std::println!("verify(BN254, 4 signals) cpu_instruction_cost = {cpu}");
+        assert!(
+            cpu < BN254_VERIFY_CPU_THRESHOLD,
+            "verify cost regressed: {cpu}"
+        );
+    }
+
+    /// Swapping `root` and `nullifier` keeps every value in range and the count correct —
+    /// the only thing wrong is the order, and that must be enough to fail.
+    #[test]
+    fn fixture_permuted_signals_do_not_verify() {
+        let env = Env::default();
+        let (vk, proof, signals) = load(&env);
+        let mut permuted = signals.clone();
+        permuted.set(0, signals.get_unchecked(1));
+        permuted.set(1, signals.get_unchecked(0));
+        assert_eq!(verify(&env, &vk, &proof, &permuted), Ok(false));
+    }
+
+    /// Security Invariant #1: `choice` is bound into the proof. A proof copied from the
+    /// mempool cannot be resubmitted with the other choice.
+    #[test]
+    fn fixture_proof_rejects_a_different_choice() {
+        let env = Env::default();
+        let (vk, proof, mut signals) = load(&env);
+        assert_eq!(signals.get_unchecked(2), U256::from_u32(&env, 1));
+        signals.set(2, U256::from_u32(&env, 0));
+        assert_eq!(verify(&env, &vk, &proof, &signals), Ok(false));
+    }
+
+    /// Security Invariant #6: the proof is bound to its `poll_id`; it cannot be replayed in
+    /// another poll.
+    #[test]
+    fn fixture_proof_rejects_a_different_poll_id() {
+        let env = Env::default();
+        let (vk, proof, mut signals) = load(&env);
+        assert_eq!(signals.get_unchecked(3), U256::from_u32(&env, 42));
+        signals.set(3, U256::from_u32(&env, 43));
+        assert_eq!(verify(&env, &vk, &proof, &signals), Ok(false));
+    }
+
+    /// An on-curve but wrong proof (`A` replaced by `-A`) reaches the pairing and fails it.
+    #[test]
+    fn fixture_proof_with_negated_a_returns_false() {
+        let env = Env::default();
+        let (vk, mut proof, signals) = load(&env);
+        let a = Bn254G1Affine::from_bytes(BytesN::<64>::try_from(proof.a.clone()).unwrap());
+        proof.a = (-a).to_bytes().into();
+        assert_eq!(verify(&env, &vk, &proof, &signals), Ok(false));
+    }
+
+    /// `fixtures/vote/proof_negative.json` flips the lowest bit of `pi_a.x`, which snarkjs
+    /// rejects as "Proof commitments are not valid". The resulting `A` is not on the curve,
+    /// and the host does not return `false` for that: it traps the invocation. That is the
+    /// correct outcome (a malformed proof aborts the transaction), and it means a contract
+    /// cannot catch it and continue.
+    #[test]
+    #[should_panic(expected = "bn254 G1: point not on curve")]
+    fn fixture_negative_proof_traps_in_the_host() {
+        let env = Env::default();
+        let (vk, _, signals) = load(&env);
+        let proof = proof_from_json(&env, PROOF_NEGATIVE).unwrap();
+        let _ = verify(&env, &vk, &proof, &signals);
+    }
+
+    /// Evidence for `docs/ENCODING.md` rule 3. Feeding the host snarkjs's native G2 limb
+    /// order (`c0 || c1`) instead of `c1 || c0` does not verify: the host traps because the
+    /// bytes do not decode to a point on the curve. Paired with `fixture_proof_verifies`, this
+    /// pins down the order empirically rather than from documentation alone.
+    #[test]
+    #[should_panic(expected = "bn254 G2: point not on curve")]
+    fn fixture_snarkjs_native_g2_order_is_rejected_by_the_host() {
+        let env = Env::default();
+        let (mut vk, mut proof, signals) = load(&env);
+        proof.b = to_snarkjs_g2_order(&env, &proof.b);
+        vk.beta_g2 = to_snarkjs_g2_order(&env, &vk.beta_g2);
+        vk.gamma_g2 = to_snarkjs_g2_order(&env, &vk.gamma_g2);
+        vk.delta_g2 = to_snarkjs_g2_order(&env, &vk.delta_g2);
+        let _ = verify(&env, &vk, &proof, &signals);
+    }
+}

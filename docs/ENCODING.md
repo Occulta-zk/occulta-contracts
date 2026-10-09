@@ -50,8 +50,28 @@ This is the single most dangerous encoding trap in the repo. snarkjs emits a G2 
 expects the **opposite**: `be_bytes(X_c1) ‖ be_bytes(X_c0) ‖ be_bytes(Y_c1) ‖ be_bytes(Y_c0)`.
 
 Naively concatenating snarkjs's JSON order produces a byte string of the correct *length*
-that encodes the *wrong point*. A malformed-length error traps loudly; a swapped-limb point
-can silently produce a wrong result or fail only against a real fixture.
+that encodes the *wrong point*.
+
+### Evidence (BN254)
+
+Measured against a real Groth16 proof (`fixtures/vote/`, circom 2.2.3 + snarkjs 0.7.5,
+accepted by `snarkjs groth16 verify`), on `soroban-sdk 26.1.1`'s testutils host:
+
+| G2 encoding fed to the host (proof `B`, VK `β`, `γ`, `δ`) | Result |
+| --- | --- |
+| `X_c1 ‖ X_c0 ‖ Y_c1 ‖ Y_c0` (swapped) | `verify` returns `Ok(true)` |
+| `X_c0 ‖ X_c1 ‖ Y_c0 ‖ Y_c1` (snarkjs JSON order) | host traps: `Error(Crypto, InvalidInput)`, `bn254 G2: point not on curve` |
+
+Tests: `fixture_proof_verifies`, `fixture_snarkjs_native_g2_order_is_rejected_by_the_host`
+(`crates/occulta-verifier/src/tests.rs`). Swapping only the proof's `B` gives the same trap.
+
+So on BN254 the wrong order fails loudly, not silently: the un-swapped bytes are not a point
+on the twist, and the host checks that before pairing. Do not rely on that as a safety net —
+it is a property of these particular points, not a guarantee — but it does mean a
+mis-encoded verifier shows up the first time it sees a real proof.
+
+BLS12-381 has no proof fixture yet. Its order (`c1` first) is taken from the
+`soroban_sdk::crypto::bls12_381` documentation and is not yet confirmed empirically.
 
 This affects both curves:
 
@@ -59,8 +79,8 @@ This affects both curves:
 - **BN254 G2:** `BytesN<128>`, each `Fp2` coordinate is 64 bytes (2 × 32)
 
 **Enforcement:** `occulta_types::swap_fp2_limbs(input, half_len, out)` performs the swap
-(`c0 ‖ c1` → `c1 ‖ c0`). Applied in the off-chain SDK when constructing `Proof` and
-`VerificationKey` from snarkjs JSON.
+(`c0 ‖ c1` → `c1 ‖ c0`). `occulta_types::snarkjs` (feature `snarkjs`) applies it when
+converting snarkjs JSON into `Proof` and `VerificationKey`.
 
 **Tests:** `g2_coordinate_swap_matches_expected_host_order_bn254` (verifies the swap
 produces the correct byte layout and is not a no-op copy),
